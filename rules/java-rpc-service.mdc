@@ -19,7 +19,7 @@ alwaysApply: true
        //UserResp getUser(UserRpcReq req);
    }
    ```
-   (注意：此处的 Result 是指 `@com.hex.commons.base.Result`，其使用应遵循 `yupao-error-handling-and-operations.mdc` 中关于统一响应体Result的规范。)
+   (注意：此处的 Result 是指 `@com.hex.commons.base.Result`，其使用应遵循 `java-error-handling-and-operations.mdc` 中关于统一响应体Result的规范。)
 
 ### 【强制】接口实现规范
 1. 实现类命名：
@@ -43,9 +43,9 @@ alwaysApply: true
    - 优先使用 `final` 修饰依赖
    - 必须继承 `BaseRpcService`
    - 必须实现接口中所有方法
-   - 必须处理所有异常场景 (参考 `yupao-error-handling-and-operations.mdc`)
-   - 必须添加方法注释 (参考 `yupao-code-development-and-quality.mdc`)
-   - 必须进行参数校验 (参考 `yupao-error-handling-and-operations.mdc`)
+   - 必须处理所有异常场景 (参考 `java-error-handling-and-operations.mdc`)
+   - 必须添加方法注释 (参考 `java-code-development-and-quality.mdc`)
+   - 必须进行参数校验 (参考 `java-error-handling-and-operations.mdc`)
 
 ### 【强制】接口版本控制
 1. 接口升级原则：
@@ -66,7 +66,7 @@ alwaysApply: true
    - 修订号：向下兼容的问题修正
 
 ### 【强制】接口安全规范
-1. 参数校验： (参考 `yupao-error-handling-and-operations.mdc` 中的参数校验规范)
+1. 参数校验： (参考 `java-error-handling-and-operations.mdc` 中的参数校验规范)
    ```java
    public class UserRpcReq {
        @NotNull(message = "用户ID不能为空")
@@ -126,8 +126,8 @@ alwaysApply: true
    - **【强制】** 必须明确配置重试次数 (`retries`)。对于非幂等操作或读操作，通常设置为 `0`（不重试）或谨慎配置重试。对于幂等写操作，可根据业务容忍度和下游服务特性配置适当的重试次数（如1-2次），并配合退避策略（Dubbo支持）。
    - 推荐继承 `BaseRpcService` (如果提供了 `parseResult` 等通用逻辑)
    - 必须实现接口中所有方法
-   - 必须处理所有异常场景，特别是RPC调用异常 (参考 `yupao-error-handling-and-operations.mdc`)
-   - 必须添加方法注释 (参考 `yupao-code-development-and-quality.mdc`)
+   - 必须处理所有异常场景，特别是RPC调用异常 (参考 `java-error-handling-and-operations.mdc`)
+   - 必须添加方法注释 (参考 `java-code-development-and-quality.mdc`)
    - 可选进行调用方特有的参数校验
 
 ## 三、RPC高级特性与治理
@@ -137,7 +137,7 @@ alwaysApply: true
 *   **实现方式**：
     *   确保项目已引入并配置了兼容Dubbo的链路追踪组件（如 SkyWalking, Zipkin, OpenTelemetry）。
     *   Dubbo框架通常会自动进行上下文的透传。`BaseRpcService` 或相关AOP切面应确保链路信息的创建、传递和清除。
-    *   日志中必须包含Trace ID，以便于跨服务追踪和问题排查 (参考 `@yupao-error-handling-and-operations.mdc` 的日志规范)。
+    *   日志中必须包含Trace ID，以便于跨服务追踪和问题排查 (参考 `@java-error-handling-and-operations.mdc` 的日志规范)。
 
 ### 【推荐】RPC 服务降级与熔断
 *   **【推荐】** 为提高系统整体韧性，客户端在调用RPC服务时，应考虑实施服务降级与熔断策略。

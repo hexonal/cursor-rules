@@ -130,7 +130,7 @@ alwaysApply: true
 3.  **【推荐】** 客户端可以通过 `Accept: application/json` 请求头表明期望接收JSON格式的响应。
 
 ### 【强制】响应规范
-1.  分页响应统一使用 `com.hex.commons.page.PageResult` (或按 `@yupao-error-handling-and-operations.mdc` 中定义的统一 `Result` 结构内嵌分页信息)。所有响应数据，包括分页结果，都包装在统一的响应体内（参考 `@yupao-error-handling-and-operations.mdc` 的 `Result<T>` 结构）。
+1.  分页响应统一使用 `com.hex.commons.page.PageResult` (或按 `@java-error-handling-and-operations.mdc` 中定义的统一 `Result` 结构内嵌分页信息)。所有响应数据，包括分页结果，都包装在统一的响应体内（参考 `@java-error-handling-and-operations.mdc` 的 `Result<T>` 结构）。
 2.  **【强制】HTTP状态码与业务响应码协同使用**：
     *   所有API接口统一使用POST方法，但HTTP状态码仍应尽可能反映操作的通用HTTP语义：
         *   **`200 OK`**: 表示服务器成功处理了请求。业务操作的最终成功与否（包括业务逻辑上的成功、部分成功或业务校验失败）通过响应体内的业务状态码 (`Result.code`) 和消息 (`Result.message`) 来进一步明确。
@@ -141,7 +141,7 @@ alwaysApply: true
         *   **`429 Too Many Requests`**: 表示用户在给定时间内发送了过多请求（限流）。
         *   **`500 Internal Server Error`**: 表示服务器在执行请求时发生了未预期的内部错误，导致无法完成请求。这是服务端问题的通用指示。
         *   **`503 Service Unavailable`**: 表示服务器当前无法处理请求（例如，过载或正在维护）。通常是暂时状态。
-    *   具体业务成功或失败的细分，通过响应体 `Result` 中的业务 `code` (参考 `@yupao-error-handling-and-operations.mdc` 的错误码规范) 和 `message` 来承载。
+    *   具体业务成功或失败的细分，通过响应体 `Result` 中的业务 `code` (参考 `@java-error-handling-and-operations.mdc` 的错误码规范) 和 `message` 来承载。
     *   日志记录：服务端应详细记录导致非 `200 OK` 响应的内部原因及请求信息。
 
 ### 【推荐】API 安全
@@ -157,7 +157,7 @@ alwaysApply: true
 3.  **传输安全**：
     *   **【强制】** 所有API接口必须使用HTTPS进行数据传输，确保通信过程的机密性和完整性。
 4.  **输入校验与输出编码**：
-    *   严格校验所有来自客户端的输入（参数、请求体），防止注入攻击（如SQL注入、XSS）。（参考 `@yupao-error-handling-and-operations.mdc` 的参数校验规范）
+    *   严格校验所有来自客户端的输入（参数、请求体），防止注入攻击（如SQL注入、XSS）。（参考 `@java-error-handling-and-operations.mdc` 的参数校验规范）
     *   对输出到客户端的数据进行适当的编码，以防止XSS等问题，尤其是在将数据显示在HTML上下文中时。
 5.  **敏感数据处理**：
     *   **【强制】** API响应中不应包含不必要的敏感数据。必须返回的敏感数据（如需脱敏展示）应遵循安全规范进行脱敏处理。
@@ -193,6 +193,6 @@ alwaysApply: true
     *   接口功能描述。
     *   **POST请求体JSON结构详细说明**（包括所有参数的名称、类型、是否必填、含义、示例值）。
     *   响应体JSON结构详细说明。
-    *   错误码说明 (参考 `@yupao-error-handling-and-operations.mdc`)。
+    *   错误码说明 (参考 `@java-error-handling-and-operations.mdc`)。
     *   完整的请求和响应示例JSON。
     *   **【推荐】** API版本历史、详细的变更日志（包括新增、修改、废弃的接口和字段）、以及废弃接口的迁移指南和明确的废弃时间表（如有）。

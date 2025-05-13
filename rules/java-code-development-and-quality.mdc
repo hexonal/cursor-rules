@@ -114,11 +114,11 @@ alwaysApply: true
                 try {
                     conn.rollback(); // 回滚事务
                 } catch (SQLException ex) {
-                    // 记录回滚失败的日志，参考 @yupao-error-handling-and-operations.mdc 日志规范
+                    // 记录回滚失败的日志，参考 @java-error-handling-and-operations.mdc 日志规范
                     log.error("Transaction rollback failed", ex);
                 }
             }
-            // 将SQLException转换为com.hex.common.exception.BizException，参考 @yupao-error-handling-and-operations.mdc
+            // 将SQLException转换为com.hex.common.exception.BizException，参考 @java-error-handling-and-operations.mdc
             // BizErrorCode.DATABASE_OPERATION_FAILED 为示例错误码，请替换为实际定义的错误码
             throw new com.hex.common.exception.BizException(com.hex.common.exception.BizErrorCode.DATABASE_OPERATION_FAILED, "Database operation failed: " + e.getMessage(), e);
         } finally {
@@ -136,8 +136,8 @@ alwaysApply: true
    d. **【强制】异常处理与日志**：
       - 所有 `SQLException` 都必须被捕获。
       - 捕获异常后，如果事务需要回滚，则执行回滚操作。
-      - 必须记录详细的错误日志，包含错误信息、堆栈、可能的业务上下文，遵循 `@yupao-error-handling-and-operations.mdc` 的日志规范。
-      - 最终应将底层的 `SQLException` (以及其他受检查异常或特定的运行时异常) 包装成或转换为 `com.hex.common.exception.BizException` (携带合适的 `BizErrorCode`) 向上抛出，遵循 `@yupao-error-handling-and-operations.mdc` 的异常处理规范。对于无法通过 `BizErrorCode` 归类的、非预期的运行时故障，可按该规范使用 `SystemException`。
+      - 必须记录详细的错误日志，包含错误信息、堆栈、可能的业务上下文，遵循 `@java-error-handling-and-operations.mdc` 的日志规范。
+      - 最终应将底层的 `SQLException` (以及其他受检查异常或特定的运行时异常) 包装成或转换为 `com.hex.common.exception.BizException` (携带合适的 `BizErrorCode`) 向上抛出，遵循 `@java-error-handling-and-operations.mdc` 的异常处理规范。对于无法通过 `BizErrorCode` 归类的、非预期的运行时故障，可按该规范使用 `SystemException`。
 
    e. **【推荐】Spring编程式事务**：
       - **优先推荐**：即使需要手动控制事务的执行点，也应优先考虑使用Spring提供的 `TransactionTemplate`。它简化了手动事务管理的复杂性，减少了样板代码，并能更好地集成Spring的事务同步和资源管理机制。
@@ -294,10 +294,10 @@ alwaysApply: true
 ### 【强制】编码实践
 1. 异常处理：
    - 应用中所有通过 `throw` 语句显式抛出或转换的异常，应统一使用 `com.hex.common.exception.BizException`（参考 `com.hex.common.exception.BizException.java` 文件）。
-   - `BizException` 通过其错误码（如 `com.hex.common.exception.BizErrorCode`）区分不同类型的错误（业务错误、服务错误、可预期的系统操作错误）。对于极其罕见的、无法通过 `BizErrorCode` 归类的运行时故障，可使用 `SystemException` (参考 `@yupao-error-handling-and-operations.mdc` 中的异常分类)。
-   - 必须记录详细日志，遵循 `@yupao-error-handling-and-operations.mdc` 的日志规范。
-   - 必须进行统一异常处理（如通过 `@RestControllerAdvice`），遵循 `@yupao-error-handling-and-operations.mdc` 的异常响应处理规范。
-2. 日志打印：(部分内容与 yupao-error-handling.mdc 重叠，后续统一处理)
+   - `BizException` 通过其错误码（如 `com.hex.common.exception.BizErrorCode`）区分不同类型的错误（业务错误、服务错误、可预期的系统操作错误）。对于极其罕见的、无法通过 `BizErrorCode` 归类的运行时故障，可使用 `SystemException` (参考 `@java-error-handling-and-operations.mdc` 中的异常分类)。
+   - 必须记录详细日志，遵循 `@java-error-handling-and-operations.mdc` 的日志规范。
+   - 必须进行统一异常处理（如通过 `@RestControllerAdvice`），遵循 `@java-error-handling-and-operations.mdc` 的异常响应处理规范。
+2. 日志打印：(部分内容与 java-error-handling.mdc 重叠，后续统一处理)
    - 必须使用Log4j2
    - 必须使用占位符
    - 必须进行日志级别判断
@@ -306,7 +306,7 @@ alwaysApply: true
    - 必须私有构造函数
    - 必须使用静态方法
    - 必须编写单元测试
-4. 配置加载： (部分内容与 yupao-error-handling.mdc 重叠，后续统一处理)
+4. 配置加载： (部分内容与 java-error-handling.mdc 重叠，后续统一处理)
    - 必须使用Apollo配置中心
    - 必须使用@ConfigurationProperties
    - 必须进行配置验证
@@ -602,12 +602,12 @@ alwaysApply: true
    - 禁止修改事务传播行为
    - 如需调整事务配置，必须单独评估影响
 
-5. 异常处理： (此部分与 yupao-error-handling.mdc 高度相关，后续统一)
+5. 异常处理： (此部分与 java-error-handling.mdc 高度相关，后续统一)
    - 禁止删除现有的异常处理逻辑
    - 禁止修改异常抛出链
    - 可以增加新的异常处理，但不能影响现有流程
 
-6. 日志记录： (此部分与 yupao-error-handling.mdc 高度相关，后续统一)
+6. 日志记录： (此部分与 java-error-handling.mdc 高度相关，后续统一)
    - 禁止删除现有的关键日志
    - 禁止修改日志级别
    - 可以增加新的日志记录点
@@ -767,7 +767,7 @@ alwaysApply: true
 1.  **对外接口（HTTP API / RPC API）**：
     *   **优先扩展**：对于已发布的接口，当需要增加功能或改变行为时，应优先考虑新增接口或在现有接口上新增方法（如果协议支持且不破坏兼容性），而非直接修改原有接口签名或核心行为。
     *   **废弃策略**：旧接口或方法在有替代方案后，应标记为 `@Deprecated`，提供明确的迁移指南和废弃时间表，并通知所有已知调用方。
-    *   **兼容性**：任何对接口的修改（如参数增减、类型变更、返回值结构调整、核心业务逻辑变更）都必须经过严格的兼容性评估。不兼容的修改需要上升版本号（参考 `@yupao-project-architecture-and-structure.mdc` 中的版本管理规范），并与所有依赖方协调升级。
+    *   **兼容性**：任何对接口的修改（如参数增减、类型变更、返回值结构调整、核心业务逻辑变更）都必须经过严格的兼容性评估。不兼容的修改需要上升版本号（参考 `@java-project-architecture-and-structure.mdc` 中的版本管理规范），并与所有依赖方协调升级。
     *   接口行为的修改（即使签名不变）也需谨慎，确保符合接口文档和调用方预期。
 
 2.  **内部公共方法/类库**：
