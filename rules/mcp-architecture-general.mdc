@@ -1,7 +1,7 @@
 ---
 description: 
 globs: 
-alwaysApply: false
+alwaysApply: true
 ---
 # MCP 核心架构指南 (MCP Core Architecture Guide)
 

@@ -1,7 +1,7 @@
 ---
 description: 
 globs: 
-alwaysApply: false
+alwaysApply: true
 ---
 # 使用 uv 打包与依赖管理指南 (Packaging and Dependency Management with uv Guide)
 
