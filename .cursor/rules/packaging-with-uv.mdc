@@ -14,7 +14,7 @@ alwaysApply: true
 
 ## 1. `pyproject.toml` 核心配置
 
-`[pyproject.toml](mdc:pyproject.toml)` 是项目的核心配置文件，用于声明元数据、依赖项和构建系统。
+`[pyproject.toml](mdc:pyproject.toml)` 是项目的核心配置文件，用于声明元数据、依赖项和构建系统。其在项目中的位置和基本作用可参考 [项目结构指南](mdc:rules/project-structure.mdc) 中关于配置文件的说明。
 
 ### 1.1. `[project]` 表
 *   **`name`**: 项目的规范名称，即在 PyPI 上发布的名称 (e.g., `coze-mcp-server`)。

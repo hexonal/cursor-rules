@@ -1,13 +1,13 @@
 ---
-description:
-globs:
+description: 
+globs: 
 alwaysApply: true
 ---
 # MCP 资源指南 (MCP Resources Guide)
 
 本指南详细说明了如何在 MCP (Model Context Protocol) 服务器（如 `coze-mcp-server`）中定义、暴露和管理资源。资源是 MCP 的核心概念之一，代表了服务器可以提供给 LLM 使用的数据和内容。
 
-参考：[MCP Resources Concepts](https://modelcontextprotocol.io/docs/concepts/resources)
+参考：[MCP Resources Concepts](mdc:https:/modelcontextprotocol.io/docs/concepts/resources)
 
 ## 1. 资源定义
 
@@ -43,8 +43,9 @@ alwaysApply: true
 
 ## 5. 实现说明
 
-*   使用 MCP SDK (如 [modelcontextprotocol/python-sdk](https://github.com/modelcontextprotocol/python-sdk)) 提供的工具和类型来定义和处理资源。
+*   使用 MCP SDK (如 [modelcontextprotocol/python-sdk](mdc:https:/github.com/modelcontextprotocol/python-sdk)) 提供的工具和类型来定义和处理资源。
 *   资源内容应针对 LLM 进行优化，使其易于解析和利用。
 *   确保资源 URI 的稳定性和唯一性。
+*   关于如何在项目中组织资源实现代码，可以参考 [项目结构指南](mdc:rules/project-structure.mdc) 中关于 `resources/` 子包的建议。
 
 通过良好设计的资源，MCP 服务器可以有效地向 LLM 提供上下文信息，增强其执行任务的能力。

@@ -57,4 +57,5 @@ alwaysApply: true
     *   对于 `coze-mcp-server`，其通过 `uvx coze-mcp-server` 或 `python -m coze_mcp_server` 启动，并监听传入的 MCP 连接，其 Transport 机制由其依赖的 MCP 库（可能是 Python SDK）处理。
     *   配置（如端口、协议）应清晰并在 `[README.md](mdc:README.md)` 中说明，`coze-mcp-server` 的 README 提供了在 Claude.app 和 Zed 中的配置示例，这些配置间接指定了如何连接到服务器的 Transport。
 
+这些高级概念的实现和应用，通常涉及到 [MCP 服务器指南](mdc:rules/mcp-server-guidelines.mdc) 和 [MCP 客户端指南](mdc:rules/mcp-client-guidelines.mdc) 中描述的逻辑。
 理解并正确应用这些高级概念，可以帮助开发者构建更强大、更灵活的 MCP 集成。

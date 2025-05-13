@@ -40,6 +40,6 @@ MCP 服务器主要通过以下方式向客户端暴露其能力：
 
 *   **对于服务器开发者**: 请参考 [MCP 服务器指南](mdc:rules/mcp-server-guidelines.mdc) 和相关的资源及工具指南。
 *   **对于客户端开发者**: 请参考 [MCP 客户端指南](mdc:rules/mcp-client-guidelines.mdc)。
-*   **通用项目设置**: 参考 [项目结构指南](mdc:rules/project-structure.mdc) 和 [Python 编码标准指南](mdc:rules/python-coding-standards.mdc)。
+*   **通用项目设置**: 参考 [项目结构指南](mdc:rules/project-structure.mdc)、[Python 编码标准指南](mdc:rules/python-coding-standards.mdc) 和 [使用 uv 打包与依赖管理指南](mdc:rules/packaging-with-uv.mdc)。
 
 本架构指南旨在提供一个高层次的理解。具体的实现细节和最佳实践请查阅各个专门的指南文件。
