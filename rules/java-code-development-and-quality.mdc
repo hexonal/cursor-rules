@@ -1,0 +1,798 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Java项目代码开发与质量规范
+
+本规范旨在统一Java项目的代码编写风格、质量标准、测试要求和提交过程，以确保代码的健壮性、可读性和可维护性。
+
+## 一、代码编写规范
+
+### 【强制】方法设计原则
+1. 原子性原则：
+   - 一个方法只做一件事情
+   - 方法的功能必须具有原子性，不可再分
+   - 避免在一个方法中混合多个业务逻辑
+   - 修改操作必须保证事务的原子性
+
+2. 可读性原则：
+   - 方法名必须清晰表达其功能
+   - 参数命名必须见名知意
+   - 复杂逻辑必须添加注释说明
+   - 避免使用魔法数字，应该使用常量定义
+
+3. 分层原则：
+   ```java
+   @Service
+   @RequiredArgsConstructor  // 使用构造器注入
+   public class XxxBizServiceImpl implements XxxBizService {
+       // 注入依赖
+       private final XxxRpcProxyService xxxRpcProxyService;
+
+       @Override
+       public void doSomething(XxxReq req) {
+           // 1. 参数校验
+           validateParams(req);
+
+           // 2. 业务处理
+           xxxRpcProxyService.doSomething(req);
+
+           // 3. 结果处理（如果需要）
+           handleResult();
+       }
+   }
+   ```
+
+### 【强制】业务代码规范
+1. 服务实现类：
+   - 必须使用 @Service 注解
+   - 必须使用 @RequiredArgsConstructor 进行依赖注入
+   - 必须实现对应的接口
+   - 类名必须以 ServiceImpl 或 BizServiceImpl 结尾
+
+2. 方法实现：
+   - 必须添加 @Override 注解
+   - 必须进行参数校验
+   - 必须处理异常情况
+   - 必须记录关键日志
+
+3. 事务处理：
+   ```java
+   @Transactional(rollbackFor = Exception.class)
+   public void updateData(XxxReq req) {
+       // 1. 数据校验
+       validateData(req);
+
+       // 2. 更新操作
+       doUpdate(req);
+
+       // 3. 结果处理
+       handleResult();
+   }
+   ```
+
+4. 手动事务处理规范：
+   在需要更细粒度控制或特定场景下，可以考虑手动管理事务。但优先推荐使用Spring的编程式事务管理（如`TransactionTemplate`）。若直接使用JDBC进行手动事务管理，必须遵循以下规范：
+
+   a. **适用场景**：
+      - 事务边界无法简单通过 `@Transactional` 定义在方法级别时。
+      - 需要在一个业务方法内执行多个独立的、需要精细控制的事务单元。
+      - 与某些不支持Spring声明式事务的特定组件交互，且该组件自身提供事务API时。
+
+   b. **【强制】获取与释放资源**：
+      - 数据库连接必须通过依赖注入的 `DataSource` 的 `getConnection()` 方法获取。
+      - 必须在 `finally` 块中确保 `Connection`、`Statement`、`ResultSet` 等资源被正确关闭，即使发生异常。顺序为：先 `ResultSet`，再 `Statement`，最后 `Connection`。
+      - 强烈推荐使用 `try-with-resources` 语句（Java 7+）自动管理资源，以简化代码并减少遗漏关闭的风险。
+        ```java
+        // 推荐使用 try-with-resources
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(SQL_XXX)) {
+            // ... 设置参数并执行
+        } catch (SQLException e) {
+            // ... 处理异常
+        }
+        ```
+
+   c. **【强制】事务边界显式控制**：
+      - 在开启事务前，必须调用 `connection.setAutoCommit(false);`。
+      - 业务逻辑成功完成后，必须调用 `connection.commit();` 提交事务。
+      - 当发生 `SQLException` 或业务逻辑判断需要回滚时，必须在 `catch` 块或相应逻辑中调用 `connection.rollback();`。
+      - 示例结构：
+        ```java
+        Connection conn = null;
+        try {
+            conn = dataSource.getConnection();
+            conn.setAutoCommit(false); // 开始事务
+
+            // ... 执行数据库操作1
+            // ... 执行数据库操作2
+
+            conn.commit(); // 提交事务
+        } catch (SQLException e) {
+            if (conn != null) {
+                try {
+                    conn.rollback(); // 回滚事务
+                } catch (SQLException ex) {
+                    // 记录回滚失败的日志，参考 @yupao-error-handling-and-operations.mdc 日志规范
+                    log.error("Transaction rollback failed", ex);
+                }
+            }
+            // 将SQLException转换为com.hex.common.exception.BizException，参考 @yupao-error-handling-and-operations.mdc
+            // BizErrorCode.DATABASE_OPERATION_FAILED 为示例错误码，请替换为实际定义的错误码
+            throw new com.hex.common.exception.BizException(com.hex.common.exception.BizErrorCode.DATABASE_OPERATION_FAILED, "Database operation failed: " + e.getMessage(), e);
+        } finally {
+            if (conn != null) {
+                try {
+                    conn.setAutoCommit(true); // 恢复自动提交（可选，取决于连接池配置和后续使用）
+                    conn.close(); // 关闭连接（归还到连接池）
+                } catch (SQLException e) {
+                    log.error("Failed to close connection", e);
+                }
+            }
+        }
+        ```
+
+   d. **【强制】异常处理与日志**：
+      - 所有 `SQLException` 都必须被捕获。
+      - 捕获异常后，如果事务需要回滚，则执行回滚操作。
+      - 必须记录详细的错误日志，包含错误信息、堆栈、可能的业务上下文，遵循 `@yupao-error-handling-and-operations.mdc` 的日志规范。
+      - 最终应将底层的 `SQLException` (以及其他受检查异常或特定的运行时异常) 包装成或转换为 `com.hex.common.exception.BizException` (携带合适的 `BizErrorCode`) 向上抛出，遵循 `@yupao-error-handling-and-operations.mdc` 的异常处理规范。对于无法通过 `BizErrorCode` 归类的、非预期的运行时故障，可按该规范使用 `SystemException`。
+
+   e. **【推荐】Spring编程式事务**：
+      - **优先推荐**：即使需要手动控制事务的执行点，也应优先考虑使用Spring提供的 `TransactionTemplate`。它简化了手动事务管理的复杂性，减少了样板代码，并能更好地集成Spring的事务同步和资源管理机制。
+      - `TransactionTemplate` 示例:
+        ```java
+        // import com.hex.common.exception.BizException;
+        // import com.hex.common.exception.BizErrorCode; // 假设BizErrorCode已定义
+        @Autowired
+        private TransactionTemplate transactionTemplate;
+        // 可以注入其他需要在此事务中操作的Service或DAO组件，例如:
+        // @Autowired 
+        // private YourCustomService yourCustomService;
+        // @Autowired 
+        // private YourCustomDao yourCustomDao;
+
+        public void doSomethingInTransaction() {
+            transactionTemplate.execute(status -> {
+                try {
+                    // 执行数据库操作1 (例如通过注入的Service/DAO):
+                    // yourCustomService.doWork1();
+                    // yourCustomDao.updateData1();
+                    // System.out.println("执行数据库操作1");
+
+                    // 执行数据库操作2 (例如通过注入的Service/DAO):
+                    // yourCustomService.doWork2();
+                    // yourCustomDao.updateData2();
+                    // System.out.println("执行数据库操作2");
+
+                    // 如果没有异常，事务会自动提交
+                    return null; // 或返回一个结果，如果方法签名是 TransactionCallback<T>
+                } catch (DataAccessException e) { // Spring的通用数据访问异常
+                    status.setRollbackOnly(); // 标记事务为仅回滚
+                    log.error("Transaction failed due to DataAccessException, rolling back.", e);
+                    // 将DataAccessException转换为com.hex.common.exception.BizException
+                    // BizErrorCode.TRANSACTION_FAILED_DATA_ACCESS 为示例错误码
+                    throw new com.hex.common.exception.BizException(com.hex.common.exception.BizErrorCode.TRANSACTION_FAILED_DATA_ACCESS, "Operation failed within transaction due to DataAccessException", e);
+                } catch (Exception e) { // 可根据需要捕获更具体的业务异常或检查型异常
+                    status.setRollbackOnly();
+                    log.error("Transaction failed due to an unexpected exception, rolling back.", e);
+                    // 转换为com.hex.common.exception.BizException
+                    // BizErrorCode.TRANSACTION_FAILED_UNEXPECTED 为示例错误码
+                    throw new com.hex.common.exception.BizException(com.hex.common.exception.BizErrorCode.TRANSACTION_FAILED_UNEXPECTED, "Operation failed unexpectedly within transaction", e);
+                }
+            });
+        }
+        ```
+      - 如果需要更底层的控制，可以直接注入 `PlatformTransactionManager` (例如 `DataSourceTransactionManager`)，并使用 `TransactionDefinition` 和 `TransactionStatus` 手动开启、提交、回滚事务。这种方式比直接操作JDBC Connection更安全，但比 `TransactionTemplate` 复杂。
+
+   f. **【警告】避免滥用手动事务**：
+      - 仅在Spring声明式事务 (`@Transactional`) 确实无法满足需求，且细粒度控制确实必要时才考虑手动事务。
+      - 手动事务代码更容易出错（如忘记释放资源、错误处理不当），增加了代码复杂度和维护成本。
+
+   g. **【注意】事务隔离级别与传播行为**：
+      - 直接使用JDBC Connection时，可以通过 `connection.setTransactionIsolation(int level)` 设置隔离级别。但需谨慎，不当的隔离级别可能导致数据一致性问题或性能下降。
+      - 如果使用Spring编程式事务（`TransactionTemplate`或`PlatformTransactionManager`），可以通过`TransactionDefinition`设置隔离级别和传播行为，其行为与声明式事务类似。
+
+### 【强制】命名规范
+1. 类命名：
+   - 领域模型类：XxxDO
+   - 数据传输对象：XxxDTO
+   - 数据传输rpc传入入参对象: XxxRpcReq
+   - 数据传输rpc传入出参对象：XxxRpcResp
+   - 实体类中的get/set方法使用lombok来完成
+   - 请求对象：XxxReq
+   - 响应对象：XxxResp
+   - 服务接口：XxxService
+   - 服务实现：XxxServiceImpl
+   - 控制器：XxxController
+   - 工具类：XxxUtils
+   - 操作redis相关的类: Redisson
+   - 操作分页相关的类: PageUtils
+   - rpc的接口命名: XxxRpcService
+   - rpc的接口实现命名: XxxRpcServiceImpl
+   - rpc调用方接口命名: XxxRpcProxyService
+   - rpc调用接口实现命名: XxxRpcServiceImpl
+   - rpc实现统一需要继承: extends BaseRpcService
+   - 实体类需要实现: implements Serializable
+2. 方法命名：
+   - 获取单个对象：getXxx
+   - 获取多个对象：listXxx
+   - 统计数量：countXxx
+   - 新增：createXxx
+   - 修改：updateXxx
+   - 删除：deleteXxx
+   - 分页: pageXXX
+3. 变量命名：
+   - 常量：全大写下划线分隔
+   - 变量：驼峰命名
+4. 项目代码创建规范,需要根据模块定义: (此条目更偏向项目结构，但为保持完整性暂时保留)
+   - xxx-api模块: 提供rpc相关接口
+   - xxx-api-impl模块: 实现接口相关实现
+   - xxx-biz模块: 业务实现层
+   - xxx-common模块: 通用能力
+   - xxx-dao模块: 提供数据库交互的原子化能力
+   - xxx-integration模块: 提供调用外部调用的能力,如http或者rpc等
+   - xxx-web模块： 提供对外暴露的http接口
+
+### 【强制】注释规范
+1. 类注释：
+   ```java
+   /**
+    * 类的功能描述
+    *
+    * @author 作者
+    * @date 创建时间 yyyy-MM-dd
+    * @version 版本号
+    */
+   ```
+2. 方法注释：
+   ```java
+   /**
+    * 方法的功能描述
+    *
+    * @param 参数名 参数说明
+    * @return 返回值说明
+    * @throws 异常类型 异常说明
+    * @version 版本号
+    * @author 作者
+    * @date 创建时间 yyyy-MM-dd
+    */
+   ```
+3. 字段注释：
+   ```java
+   /** 
+    * 字段说明
+    * @mock 模拟数据（如果需要）
+    */
+   private String field;
+   ```
+4. 常量注释：
+   ```java
+   /**
+    * 常量说明
+    * 例如：订单状态 - 已支付
+    */
+   public static final int ORDER_STATUS_PAID = 1;
+   ```
+
+### 【强制】代码格式
+1. 缩进：4个空格
+2. 行宽：最大120字符
+3. 花括号：
+   - 左花括号不换行
+   - 右花括号独占一行
+4. 空行：
+   - 方法间空一行
+   - 逻辑块间空一行
+5. 导包：
+   - 按类型分组
+   - 组间空一行
+   - 禁止使用*导入
+6. 禁止使用行尾注释
+
+### 【强制】编码实践
+1. 异常处理：
+   - 应用中所有通过 `throw` 语句显式抛出或转换的异常，应统一使用 `com.hex.common.exception.BizException`（参考 `com.hex.common.exception.BizException.java` 文件）。
+   - `BizException` 通过其错误码（如 `com.hex.common.exception.BizErrorCode`）区分不同类型的错误（业务错误、服务错误、可预期的系统操作错误）。对于极其罕见的、无法通过 `BizErrorCode` 归类的运行时故障，可使用 `SystemException` (参考 `@yupao-error-handling-and-operations.mdc` 中的异常分类)。
+   - 必须记录详细日志，遵循 `@yupao-error-handling-and-operations.mdc` 的日志规范。
+   - 必须进行统一异常处理（如通过 `@RestControllerAdvice`），遵循 `@yupao-error-handling-and-operations.mdc` 的异常响应处理规范。
+2. 日志打印：(部分内容与 yupao-error-handling.mdc 重叠，后续统一处理)
+   - 必须使用Log4j2
+   - 必须使用占位符
+   - 必须进行日志级别判断
+   - 必须包含追踪ID
+3. 工具类：
+   - 必须私有构造函数
+   - 必须使用静态方法
+   - 必须编写单元测试
+4. 配置加载： (部分内容与 yupao-error-handling.mdc 重叠，后续统一处理)
+   - 必须使用Apollo配置中心
+   - 必须使用@ConfigurationProperties
+   - 必须进行配置验证
+
+### 【推荐】不可变性 (Immutability) 的深入应用
+*   **【推荐】** 除了 `record` 类型外，在设计普通类（尤其是领域模型、值对象、DTO等）时，也应优先考虑不可变性。
+*   **实现方式**：
+    *   类声明为 `final` (如果不再有子类)。
+    *   所有字段声明为 `private final`。
+    *   不提供 `setter` 方法或任何修改内部状态的方法。
+    *   如果字段是可变对象（如集合、`Date`），在构造函数中进行防御性拷贝（defensive copy）以保存传入对象的状态，并在 `getter` 方法中返回其拷贝或不可变视图（如 `Collections.unmodifiableList()`）。
+        ```java
+        public final class ImmutableUser {
+            private final String name;
+            private final List<String> roles;
+
+            public ImmutableUser(String name, List<String> roles) {
+                this.name = name;
+                this.roles = List.copyOf(roles); // 防御性拷贝，JDK 10+
+                // 或者 this.roles = new ArrayList<>(roles); 对于更早版本，并在getter中返回Collections.unmodifiableList
+            }
+
+            public String getName() {
+                return name;
+            }
+
+            public List<String> getRoles() {
+                return Collections.unmodifiableList(roles); // 返回不可变视图
+            }
+        }
+        ```
+*   **优势**：不可变对象本质上是线程安全的，易于理解和推理，可以安全地共享，减少副作用，并简化并发编程。
+
+### 【推荐】Stream API 使用细化规范
+*   **可读性**：
+    *   **【推荐】** 避免编写过于冗长和复杂的单行 Stream 操作链。如果一个 Stream 管道包含多个中间操作且逻辑复杂，应考虑将其拆分为多个步骤或使用局部变量来提高可读性。
+    *   **【推荐】** 为 lambda 表达式中的参数选择有意义的名称。
+*   **性能考量**：
+    *   **【注意】** 了解 Stream 操作的潜在性能开销，尤其是在处理大数据集或性能敏感的代码路径时。例如，某些中间操作（如 `sorted()`, `distinct()`）可能需要缓冲所有元素。
+    *   **【避免】** 在 Stream 操作（特别是 `map`, `filter` 等中间操作）中执行阻塞I/O或重量级的计算密集型任务，除非明确使用并行Stream并已评估其适用性。
+    *   **【推荐】** 对于简单集合操作，传统循环有时可能比 Stream 更高效或更易读。
+*   **副作用限制**：
+    *   **【强制】** Stream 操作的 lambda 表达式应主要用于数据转换和计算，应避免或严格限制在其中产生副作用（即修改外部状态）。唯一的例外通常是终端操作如 `forEach()`（用于消费结果）或特定的收集器。
+*   **并行Stream (`parallelStream()`) 使用**：
+    *   **【慎用】** 谨慎使用并行Stream。它并非万能药，不当使用可能导致性能下降甚至死锁。
+    *   **适用场景**：仅在数据集足够大、单个元素处理耗时较长、任务可以有效并行分解且无共享可变状态竞争时考虑。
+    *   **注意事项**：并行Stream默认共享公共的 `ForkJoinPool.commonPool()`。如果任务是阻塞性的，可能会耗尽池中的线程，影响系统其他部分的并行处理能力。考虑使用自定义的 `ForkJoinPool` 执行并行Stream操作。
+*   **关闭流**：
+    *   **【注意】** 对于由I/O资源（如 `Files.lines()`）支持的流，必须使用 `try-with-resources` 语句或显式调用 `close()` 方法以确保底层资源被释放。
+
+### 【推荐】`Optional` 使用最佳实践
+*   **返回类型**：
+    *   **【推荐】** 当一个方法可能无法返回期望的值时（例如，查找一个可能不存在的对象），应返回 `Optional<T>` 而不是 `null`，以明确表示值缺失的可能性。
+*   **字段与参数**：
+    *   **【不推荐】** 通常不推荐将 `Optional` 用作类字段的类型。如果一个字段是可选的，可以直接将其声明为 `T type` 并允许为 `null`（需文档说明），或通过构造函数/工厂方法确保其总被初始化。
+    *   **【慎用】** 将 `Optional<T>` 作为方法参数。通常，如果参数是可选的，可以提供方法重载，或者接受一个可能为 `null` 的 `T` 类型参数并在方法内部处理（例如，使用 `Optional.ofNullable()`包装）。
+*   **处理方式**：
+    *   **【推荐】** 优先使用 `Optional` 的组合方法，如 `map()`, `flatMap()`, `filter()`, `orElse()`, `orElseGet()`, `orElseThrow()` 来处理可能缺失的值，而不是过多依赖 `isPresent()` 后跟 `get()`。
+        ```java
+        // 推荐
+        String value = findUser(id)
+                        .map(User::getName)
+                        .orElse("Default Name");
+
+        // 不太推荐（但有时不可避免）
+        Optional<User> userOpt = findUser(id);
+        if (userOpt.isPresent()) {
+            String name = userOpt.get().getName();
+            // ...
+        }
+        ```
+*   **禁止无检查的 `get()`**：
+    *   **【强制】** 在调用 `get()` 方法之前，必须通过 `isPresent()` 检查或通过其他方式（如 `orElseThrow()`）确保 `Optional` 包含值。
+*   **避免创建不必要的 `Optional`**：
+    *   **【注意】** 如果一个值已知永远不会是 `null`，则不应将其包装在 `Optional` 中。
+
+### 【新增强制】日期与时间 API (`java.time`) 的全面使用
+*   **【强制】** 项目中所有日期和时间相关的操作，必须使用 `java.time` 包（如 `LocalDate`, `LocalTime`, `LocalDateTime`, `ZonedDateTime`, `Instant`, `Duration`, `Period`），并完全替换掉旧的 `java.util.Date`, `java.util.Calendar`, 和 `java.text.SimpleDateFormat`。
+*   **不可变性**：`java.time` 包中的所有核心类都是不可变的，应充分利用此特性。
+*   **时区处理**：
+    *   **【强制】** 在处理跨时区或需要精确时间点的场景时，必须明确处理时区。推荐使用 `ZonedDateTime` 或 `Instant`。
+    *   **【推荐】** 服务端存储时间戳时，优先使用 `Instant` (通常代表UTC时间戳)。与数据库交互时，确保数据库字段类型能正确存储时间戳或带时区的时间。
+*   **格式化与解析**：
+    *   **【强制】** 统一使用 `java.time.format.DateTimeFormatter` 进行日期时间的格式化和解析。
+    *   **【推荐】** 预定义常用的 `DateTimeFormatter` 实例作为常量，以提高性能和代码一致性。
+*   **与旧API交互**：
+    *   **【注意】** 当需要与仍在使用旧日期时间API的库或系统交互时，可以使用 `java.util.Date.from(Instant)`、`java.util.Date.toInstant()` 以及 `java.sql.Timestamp` 与 `LocalDateTime` 之间的转换方法。
+
+### 【推荐】运用JDK 21+新特性提升代码质量
+
+1.  **记录类型 (Records)**:
+    *   **【推荐】** 对于主要用作不可变数据载体（如DTOs、配置对象、简单值对象）的类，优先使用 `record` 类型。
+        ```java
+        // 示例：定义一个表示坐标点的Record
+        public record Point(int x, int y) {}
+
+        // 示例：定义一个更复杂的DTO
+        public record UserProfileDTO(String userId, String username, String email) {}
+        ```
+    *   **优势**：自动生成构造函数、`equals()`、`hashCode()`、`toString()` 以及字段的访问器方法，极大简化代码，减少样板代码。
+    *   **注意**：Record 默认是 `final` 的，并且其字段也是 `final` 的。它们天然适合表示不可变数据。如果需要可变性，或者有复杂的继承需求，传统类仍然是合适的选择。
+
+2.  **记录模式 (Record Patterns - JEP 440)**:
+    *   **【推荐】** 在 `instanceof` 和 `switch` 语句中，使用记录模式进行解构和类型匹配，以提高代码的可读性和简洁性。
+        ```java
+        // instanceof 示例
+        Object obj = new Point(10, 20);
+        if (obj instanceof Point(int x, int y)) {
+            System.out.println("Point coordinates: x = " + x + ", y = " + y);
+        }
+
+        // switch 示例 (结合模式匹配)
+        sealed interface Shape permits Circle, Rectangle {}
+        record Circle(double radius) implements Shape {}
+        record Rectangle(double length, double width) implements Shape {}
+
+        static double getArea(Shape shape) {
+            return switch (shape) {
+                case Circle(var r) -> Math.PI * r * r;
+                case Rectangle(var l, var w) -> l * w;
+                // 不需要 default，因为 Shape 是 sealed 且所有子类型都被覆盖
+            };
+        }
+        ```
+    *   **优势**：减少了显式的类型转换和字段提取代码，使条件逻辑更清晰。
+
+3.  **switch 模式匹配 (Pattern Matching for switch - JEP 441)**:
+    *   **【推荐】** 扩展 `switch` 语句和表达式的能力，使其可以对对象的类型和结构进行匹配，并根据匹配结果执行相应逻辑。
+    *   **类型匹配与解构**：如上一个记录模式的 `switch` 示例所示。
+    *   **Guarded Patterns (守护模式)**：允许在 `case` 标签中使用 `when` 子句添加额外条件。
+        ```java
+        static String processValue(Object obj) {
+            return switch (obj) {
+                case String s -> "String: " + s;
+                case Integer i when i > 0 -> "Positive Integer: " + i;
+                case Integer i -> "Integer: " + i; // Handles non-positive integers
+                case null -> "Null object"; // JDK 21 支持 case null
+                default -> "Unknown type";
+            };
+        }
+        ```
+    *   **父类型匹配**：可以在 `case` 中匹配父类型，但要注意顺序，更具体的类型应放在前面。
+    *   **【强制】** 当 `switch` 覆盖了所有已知类型（例如，对于 `sealed` 类或枚举），并且作为表达式使用时，不应提供 `default` 子句，以利用编译器的详尽性检查。如果作为语句使用或未覆盖所有情况，则必须提供 `default` 子句或确保所有可能情况都被处理。
+    *   **优势**：使复杂的条件判断和数据提取逻辑更富有表现力、更安全、更易于维护。
+
+4.  **序列化集合 (Sequenced Collections - JEP 431)**:
+    *   **【推荐】** 当需要一个具有明确遇到顺序（encounter order）的集合，并且需要方便地访问第一个/最后一个元素或逆序视图时，使用新的 `SequencedCollection`、`SequencedSet`、`SequencedMap` 接口。
+    *   `List` 和 `Deque` 天然实现了 `SequencedCollection`。`LinkedHashSet` 实现了 `SequencedSet`。`LinkedHashMap` 实现了 `SequencedMap`。
+        ```java
+        // SequencedCollection (List is one)
+        List<String> list = new ArrayList<>(List.of("a", "b", "c"));
+        System.out.println(list.getFirst()); // "a"
+        System.out.println(list.getLast());  // "c"
+        list.addFirst("x"); // ["x", "a", "b", "c"]
+        list.addLast("z");  // ["x", "a", "b", "c", "z"]
+        SequencedCollection<String> reversedList = list.reversed(); // ["z", "c", "b", "a", "x"] (view)
+
+        // SequencedSet (LinkedHashSet is one)
+        SequencedSet<String> set = new LinkedHashSet<>(List.of("one", "two", "three"));
+        System.out.println(set.getFirst()); // "one"
+        set.addLast("four");
+
+        // SequencedMap (LinkedHashMap is one)
+        SequencedMap<String, Integer> map = new LinkedHashMap<>();
+        map.put("apple", 1);
+        map.put("banana", 2);
+        map.putLast("orange", 3); // Adds to the end
+        System.out.println(map.firstEntry().getKey()); // "apple"
+        System.out.println(map.reversed().sequencedKeySet()); // ["orange", "banana", "apple"] (view)
+        ```
+    *   **优势**：提供了一套统一的API来操作有序集合的端点和顺序，简化了代码。
+
+5.  **字符串模板 (String Templates - JEP 459, 第二预览版)**:
+    *   **【推荐】** (预览特性，生产使用需谨慎评估并启用预览) 用于构造包含运行时计算值的字符串。比传统的字符串拼接或 `String.format` 更安全、更易读、更灵活。
+        ```java
+        // 需要启用预览特性: --enable-preview
+        // 示例：使用 STR 模板处理器
+        String name = "Joan";
+        int age = 25;
+        String greeting = STR."My name is \{name} and I am \{age} years old.";
+        // greeting 会是 "My name is Joan and I am 25 years old."
+
+        // 示例：使用 FMT 模板处理器 (类似 String.format)
+        // String formatted = FMT."Value is %.2f\{value}"; 
+
+        // 示例：多行字符串模板
+        String html = STR."""
+                      <html>
+                        <body>
+                          <p>Hello, \{name}!</p>
+                        </body>
+                      </html>
+                      """;
+        ```
+    *   **优势**：提高了构建复杂字符串的可读性和安全性（例如 `STR` 处理器会自动进行必要的转义，防止注入问题）。
+    *   **注意**：作为预览特性，其API和行为可能在未来的Java版本中发生变化。仅在团队充分理解并接受预览特性风险时使用。
+
+6.  **作用域值 (Scoped Values - JEP 464, 第二预览版)**:
+    *   **【推荐】** (预览特性，生产使用需谨慎评估并启用预览) 用于在线程内以及线程的子线程间共享不可变数据，尤其适用于虚拟线程环境。作为 `ThreadLocal` 的一种更安全、更高效的替代方案。
+        ```java
+        // 需要启用预览特性: --enable-preview
+        // public final static ScopedValue<User> LOGGED_IN_USER = ScopedValue.newInstance();
+        //
+        // ScopedValue.where(LOGGED_IN_USER, currentUser)
+        //            .run(() -> {
+        //                // 在这个 lambda 表达式内部以及它调用的任何方法中
+        //                // LOGGED_IN_USER.get() 会返回 currentUser
+        //                // 如果 LOGGED_IN_USER 未绑定值而调用 get() 会抛出 NoSuchElementException
+        //                // 如果 LOGGED_IN_USER.isBound() 为 false
+        //
+        //                // 示例：在Web请求处理中传递用户信息
+        //                // webRequestProcessor.processRequest();
+        //            });
+        //
+        // // 在 processRequest 或其调用的方法内部:
+        // // if (LOGGED_IN_USER.isBound()) {
+        // //    User user = LOGGED_IN_USER.get();
+        // //    // ... 使用用户信息
+        // // }
+        ```
+    *   **优势**：不可变性、有限的生命周期（绑定到 `run` 方法的执行）、高效的继承（对于虚拟线程尤其重要），避免了 `ThreadLocal` 的一些常见陷阱（如内存泄漏、隐式数据传递）。
+    *   **注意**：同为预览特性，使用前需谨慎。
+
+7.  **未命名模式和变量 (Unnamed Patterns and Variables - JEP 456, 第二预览版)**:
+    *   **【推荐】** (预览特性) 当模式匹配或变量声明是必需的，但其值或名称在代码中未使用时，使用下划线 `_` 作为占位符。
+        ```java
+        // 需要启用预览特性: --enable-preview
+        // 记录模式中的未使用组件
+        // if (obj instanceof Point(int x, _)) { /* x is used, y is not */ }
+
+        // switch 中的未使用模式变量
+        // switch (order) {
+        //    case Order(User user, _, Address _) when user.isPreferred() -> ... // items and shippingAddress not used
+        //    ...
+        // }
+
+        // try-with-resources 中未使用的资源
+        // try (var _ = ScopedValue.where(...)) { ... }
+
+        // lambda 参数未使用
+        // BiConsumer<String, String> logger = (fileName, _) -> System.out.println("Processing file: " + fileName);
+
+        // catch 块中未使用的异常参数 (JDK 7 已支持，此处为模式匹配扩展)
+        // try { ... } catch (Exception _) { System.err.println("An error occurred."); }
+        ```
+    *   **优势**：提高代码清晰度，明确表示某些变量是有意未使用的。可以减少编译器警告，并帮助静态分析工具更好地理解代码意图。
+    *   **注意**：预览特性。
+
+8.  **外部函数与内存API (Foreign Function & Memory API - JEP 454, 第三预览版)**:
+    *   **【慎用】** (预览特性) 用于与Java运行时之外的代码和数据进行互操作（例如调用本地库C、C++等）。
+    *   **适用场景**：需要调用本地库以实现特定功能（如高性能计算、操作系统特定API），或操作堆外内存。
+    *   **复杂性与风险**：此API功能强大但使用复杂，不当使用可能导致JVM崩溃或安全问题。
+    *   **规范**：
+        *   **封装**：所有对FFM API的直接使用必须封装在专门的、职责清晰的类或模块中。
+        *   **严格审查**：涉及FFM API的代码必须经过严格的代码审查，重点关注内存安全、资源管理和错误处理。
+        *   **替代方案优先**：在有纯Java或成熟JNI/JNA库可以满足需求时，应优先考虑这些方案，除非FFM API能带来显著的性能或功能优势。
+        *   **文档**：必须提供详尽的文档，说明本地函数的签名、内存布局、线程安全性以及任何使用约束。
+    *   **注意**：预览特性，且具有较高的使用门槛和风险。
+
+### 【强制】依赖注入规范
+1. 构造器注入：
+   - 优先使用构造器注入
+   - 使用 @RequiredArgsConstructor 注解
+   - final 修饰依赖字段
+
+2. 字段注入：
+   - 禁止使用 @Autowired 注解注入字段
+   - 禁止使用 @Resource 注解注入字段
+
+3. 方法注入：
+   - 只在特殊场景下使用
+   - 必须说明使用原因
+
+### 【强制】代码修改范围限制
+1. 方法修改原则：
+   - 只能修改目标方法的内部实现
+   - 禁止修改方法的签名（参数列表和返回类型）
+   - 禁止修改方法的访问修饰符
+   - 禁止删除或修改现有的注解
+   - 禁止使用魔法值
+
+2. 关联代码限制：
+   - 禁止修改非关联代码
+   - 禁止修改被未提到的代码
+
+3. 依赖管理：
+   - 禁止修改现有的依赖注入
+   - 如需添加新的依赖，必须遵循构造器注入规范
+   - 禁止修改其他类的依赖关系
+
+4. 事务边界：
+   - 禁止改变现有的事务边界
+   - 禁止修改事务传播行为
+   - 如需调整事务配置，必须单独评估影响
+
+5. 异常处理： (此部分与 yupao-error-handling.mdc 高度相关，后续统一)
+   - 禁止删除现有的异常处理逻辑
+   - 禁止修改异常抛出链
+   - 可以增加新的异常处理，但不能影响现有流程
+
+6. 日志记录： (此部分与 yupao-error-handling.mdc 高度相关，后续统一)
+   - 禁止删除现有的关键日志
+   - 禁止修改日志级别
+   - 可以增加新的日志记录点
+
+7. 代码提交：
+   - 每次修改必须限定在单一职责范围内
+   - 提交信息必须清晰说明修改范围
+   - 必须通过代码审查确认修改范围合规
+
+### 遵守 SOLID 原则，确保 Spring Boot 应用程序设计的高内聚性和低耦合性。
+
+## 二、代码质量与测试规范
+
+### 【强制】代码质量规范
+1. 性能要求：
+   - 避免在循环中进行数据库操作
+   - 避免在循环中进行远程调用
+   - 批量操作必须控制数量
+   - 必要时使用缓存优化
+   - 代码需要考虑性能问题，避免代码产生一些阻塞性的问题
+
+2. 代码组织：
+   - 相关的字段放在一起
+   - 相关的方法放在一起
+   - 公共方法放在前面
+   - 私有方法放在后面
+   - 增加适当的换行,避免代码都堆这一坨,导致review过乱
+
+3. 可维护性要求：
+   - 代码必须符合阿里巴巴Java开发手册规范
+   - 必须编写单元测试
+   - 必须处理所有异常情况
+   - 必须添加必要的注释
+
+### 【强制】单元测试规范
+1. 测试用例编写：
+   ```java
+   @SpringBootTest
+   public class XxxServiceTest {
+       @Autowired
+       private XxxService xxxService;
+
+       @Test
+       public void testXxx() {
+           // 1. 准备测试数据
+           XxxReq req = new XxxReq();
+           req.setField("value");
+
+           // 2. 执行测试
+           XxxResp resp = xxxService.doSomething(req);
+
+           // 3. 验证结果
+           assertNotNull(resp);
+           assertEquals("expected", resp.getField());
+       }
+   }
+   ```
+
+2. 测试覆盖要求：
+   - 核心业务代码测试覆盖率不低于80%
+   - 必须覆盖所有异常分支
+   - 必须覆盖所有边界条件
+
+### 【强制】测试规范
+1. 单元测试
+   - 测试类命名：XxxTest
+   - 测试方法命名：test_方法名_场景
+   - 必须包含断言
+   - 必须考虑边界条件
+2. 测试覆盖率
+   - 分支覆盖率：>80%
+   - 行覆盖率：>80%
+   - 方法覆盖率：>90%
+   - 类覆盖率：>90%
+
+## 三、代码提交规范
+
+### 【强制】提交信息格式
+```
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+1. type类型：
+   - feat：新功能
+   - fix：修复bug
+   - docs：文档更新
+   - style：代码格式调整
+   - refactor：重构代码
+   - test：测试用例
+   - chore：其他修改
+2. scope范围：
+   - 影响的功能模块
+   - 可选，放在括号中
+3. subject主题：
+   - 简短描述本次提交
+   - 不超过50个字符
+   - 使用现在时态
+4. body正文：
+   - 详细描述改动原因
+   - 可以分多行
+   - 可选
+5. footer脚注：
+   - 关闭Issue编号
+   - Breaking Changes
+   - 可选
+
+### 【强制】提交原则
+1. 单一职责：
+   - 每次提交只做一件事
+   - 相关的改动放在一起
+   - 不相关的改动分开提交
+2. 提交频率：
+   - 小步提交
+   - 保持提交粒度合适
+   - 避免积压大量改动
+3. 提交时机：
+   - 功能开发完成
+   - 修复bug完成
+   - 重构完成
+   - 测试用例完成
+
+### 【强制】代码审查
+1. 审查要求：
+   - 所有代码必须经过审查
+   - 至少一个审查人通过
+   - 解决所有审查意见
+2. 审查内容：
+   - 代码规范
+   - 业务逻辑
+   - 性能问题
+   - 安全问题
+3. 审查流程：
+   - 提交合并请求
+   - 指定审查人
+   - 修改并更新
+   - 审查人确认
+
+## 四、代码修改边界与稳定性规范
+
+本章节旨在定义代码修改的基本原则和边界，以保障系统的稳定性和可维护性，减少因修改引入的潜在风险。
+
+### 【核心原则】最小化影响与职责单一
+1.  **职责边界清晰**：
+    *   每个模块、服务或组件都应有明确定义的职责。
+    *   代码修改应严格限制在当前模块或组件的职责边界内，避免随意修改或依赖其他不相关模块的内部实现。
+    *   修改前需充分理解模块的既定职责和与其他模块的协定。
+
+2.  **影响范围评估**：
+    *   任何修改前，必须评估其潜在影响范围，包括对上游调用者、下游依赖方以及系统整体性能和稳定性的影响。
+    *   对于影响较大的修改，需要制定详细的方案、回滚计划，并进行充分的沟通。
+
+### 【强制】接口与契约稳定性
+1.  **对外接口（HTTP API / RPC API）**：
+    *   **优先扩展**：对于已发布的接口，当需要增加功能或改变行为时，应优先考虑新增接口或在现有接口上新增方法（如果协议支持且不破坏兼容性），而非直接修改原有接口签名或核心行为。
+    *   **废弃策略**：旧接口或方法在有替代方案后，应标记为 `@Deprecated`，提供明确的迁移指南和废弃时间表，并通知所有已知调用方。
+    *   **兼容性**：任何对接口的修改（如参数增减、类型变更、返回值结构调整、核心业务逻辑变更）都必须经过严格的兼容性评估。不兼容的修改需要上升版本号（参考 `@yupao-project-architecture-and-structure.mdc` 中的版本管理规范），并与所有依赖方协调升级。
+    *   接口行为的修改（即使签名不变）也需谨慎，确保符合接口文档和调用方预期。
+
+2.  **内部公共方法/类库**：
+    *   作为内部共享的工具类、基础服务或公共组件，其公共方法和类定义也应保持高度稳定性。
+    *   修改这些公共部分前，必须评估对项目内所有使用方的影响。
+    *   修改原则同对外接口，优先保证向后兼容。
+
+### 【推荐】通过配置与扩展点适应变化
+1.  **配置驱动**：对于易变的业务规则、阈值、开关等，应优先通过外部配置文件（如 `.properties`, `.yml`）或配置中心进行管理，避免硬编码在代码中。
+2.  **扩展点设计**：在核心流程中，对可能发生变化或需要定制化的部分，可以预留清晰的扩展点（如策略模式、模板方法、事件监听、插件机制），使得新功能的增加或行为的调整可以通过实现扩展接口而非修改核心代码来完成。
+
+### 【强制】公共组件与基础框架的修改
+1.  **严格控制**：对公司级共享的基础组件、框架（如 `yp-commons` 等）的修改，必须遵循更严格的审批流程和代码审查标准。
+2.  **充分测试与通知**：修改后必须进行全面的回归测试和兼容性测试，确保不会对现有业务产生负面影响。发布新版本后，需及时通知所有依赖的项目团队。
+
+### 【强制】测试覆盖与验证
+1.  **伴随测试**：任何代码修改（无论是bug修复还是功能新增）都必须伴随相应的单元测试、集成测试（如果适用）。
+2.  **测试边界**：测试用例需要覆盖修改点及其直接影响的逻辑边界。对于有潜在广泛影响的修改，需要考虑更全面的端到端测试或场景测试。
+3.  **回归测试**：确保修改没有破坏已有的功能。
+
+### 【强制】遵循版本控制与分支策略
+1.  **分支操作**：所有代码修改必须在独立的特性分支或修复分支上进行，严禁直接向主干分支（如 `master` 或 `main`）推送未经评审和测试的代码。
+2.  **合并流程**：分支合并回主干前，必须通过代码审查 (Code Review) 和所有自动化测试。
+3.  **提交信息**：遵循项目既定的提交信息规范（参考本文档"代码提交规范"部分）。
+
+### 【强制】文档同步
+1.  **及时更新**：代码修改后，如果涉及到架构设计、接口定义、重要业务逻辑、配置项等，相关的设计文档、API文档（如Swagger）、README、注释等必须同步更新。
+2.  **变更记录**：对于重要的接口或功能变更，建议在文档中保留清晰的变更历史记录。

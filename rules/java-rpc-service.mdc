@@ -1,0 +1,150 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Java项目RPC服务规范
+
+本规则基于现有项目规范，专注于RPC接口的设计、实现和调用规范。
+
+## 一、RPC接口规范 (服务端)
+
+### 【强制】接口定义规范
+1. 接口命名与参数规范：
+   ```java
+   public interface UserRpcService {
+       // 正确实例
+       Result<UserRpcResp> getUser(UserRpcReq req);
+       //错误实例
+       //UserResp getUser(UserRpcReq req);
+   }
+   ```
+   (注意：此处的 Result 是指 `@com.hex.commons.base.Result`，其使用应遵循 `yupao-error-handling-and-operations.mdc` 中关于统一响应体Result的规范。)
+
+### 【强制】接口实现规范
+1. 实现类命名：
+   ```java
+   @DubboService
+   @RequiredArgsConstructor
+   public class UserRpcServiceImpl extends BaseRpcService implements UserRpcService {
+       private final UserBizService userBizService;
+       // 实现方法
+       public Result<UserRpcResp> getUser(UserRpcReq req){
+         return rpcResult(() -> {
+            UserRpcReqDTO dto = XBeanCopier.copyProperties(req, UserRpcReqDTO.class);
+            UserRpcRespDTO userRpc = userBizService.getCarouselAds(dto); // 示例方法，应为getUser相关业务
+            return XBeanCopier.copyProperties(userRpc, UserRpcResp.class); // 假设返回单个对象
+        });
+   }
+   ```
+
+2. 实现要求：
+   - 必须添加 `@DubboService` 注解
+   - 优先使用 `final` 修饰依赖
+   - 必须继承 `BaseRpcService`
+   - 必须实现接口中所有方法
+   - 必须处理所有异常场景 (参考 `yupao-error-handling-and-operations.mdc`)
+   - 必须添加方法注释 (参考 `yupao-code-development-and-quality.mdc`)
+   - 必须进行参数校验 (参考 `yupao-error-handling-and-operations.mdc`)
+
+### 【强制】接口版本控制
+1. 接口升级原则：
+   ```java
+   public interface UserRpcService {
+       // V1版本接口
+       @Deprecated
+       Result<UserRpcResp> getUser(Long userId); // 假设旧版接口
+       
+       // V2版本接口，增加了缓存参数或修改了请求体
+       Result<UserRpcResp> getUser(UserRpcReq req); // 新版接口使用请求对象
+   }
+   ```
+
+2. 版本号管理：
+   - 主版本号：不兼容的API修改
+   - 次版本号：向下兼容的功能性新增
+   - 修订号：向下兼容的问题修正
+
+### 【强制】接口安全规范
+1. 参数校验： (参考 `yupao-error-handling-and-operations.mdc` 中的参数校验规范)
+   ```java
+   public class UserRpcReq {
+       @NotNull(message = "用户ID不能为空")
+       private Long userId;
+       
+       @NotBlank(message = "用户名不能为空")
+       @Length(min = 2, max = 20, message = "用户名长度必须在2-20之间")
+       private String username;
+       // 其他业务参数...
+   }
+   ```
+2. **【强制】写操作幂等性设计**：
+    *   对于所有可能被重试的写操作（如创建、更新、删除等，即使客户端配置了重试，网络也可能导致重复请求），RPC接口的定义和实现必须保证幂等性。
+    *   **实现策略示例**：
+        *   **唯一请求ID/业务流水号**：客户端生成唯一ID并在请求中传递，服务端根据此ID判断是否为重复请求（如通过缓存或数据库记录已处理的ID）。
+        *   **版本号/乐观锁**：对于更新操作，使用版本号机制防止并发修改和重复更新带来的问题。
+        *   **状态机检查**：在执行操作前检查资源当前状态，确保操作的合法性和幂等性（如防止重复创建已存在的资源，或重复完成已完成的订单）。
+    *   接口文档中必须明确写操作的幂等性保证方式和客户端需要配合的机制（如传递唯一请求ID）。
+
+## 二、业务方调用RPC接口规范 (客户端/调用方)
+
+### 【强制】接口定义规范 (Proxy Service)
+1. 接口命名与参数规范：
+   ```java
+   public interface UserRpcProxyService {
+       // 错误实例
+       //Result<UserRpcResp> getUser(UserRpcReq req);
+       //正确实例
+       UserRpcResp getUser(UserRpcReq req);
+   }
+   ```
+   (注意：调用方封装后的方法通常直接返回业务数据 `UserRpcResp`，`Result` 的解析在实现类中完成)
+
+### 【强制】接口实现规范 (Proxy Service Impl)
+1. 实现类命名：
+   ```java
+   @Service
+   @RequiredArgsConstructor // 推荐使用构造器注入
+   public class UserRpcProxyServiceImpl extends BaseRpcService implements UserRpcProxyService {
+       @DubboReference(timeout = 3000, retries = 0) // 【强制】配置合理的超时和重试次数
+       private UserRpcService userRpcService; // UserRpcService 为RPC服务端定义的接口
+
+       // 实现方法
+       @Override
+       public UserRpcResp getUser(UserRpcReq req){
+          // 参数校验 (如果适用，例如对 req 的某些字段有特定于调用方的校验)
+          // if (req.getSomeClientSpecificField() == null) { ... }
+          return super.parseResult(() -> userRpcService.getUser(req));
+       }
+   }
+   ```
+
+2. 实现要求：
+   - 必须添加 `@Service` 注解 (Spring Service)
+   - 必须使用 `@DubboReference` 注入RPC服务。
+   - **【强制】** 必须在 `@DubboReference` 上为每次RPC调用配置合理的超时时间 (`timeout`)。默认值可能不适用所有场景。服务端超时时间应略大于客户端配置的超时时间。
+   - **【强制】** 必须明确配置重试次数 (`retries`)。对于非幂等操作或读操作，通常设置为 `0`（不重试）或谨慎配置重试。对于幂等写操作，可根据业务容忍度和下游服务特性配置适当的重试次数（如1-2次），并配合退避策略（Dubbo支持）。
+   - 推荐继承 `BaseRpcService` (如果提供了 `parseResult` 等通用逻辑)
+   - 必须实现接口中所有方法
+   - 必须处理所有异常场景，特别是RPC调用异常 (参考 `yupao-error-handling-and-operations.mdc`)
+   - 必须添加方法注释 (参考 `yupao-code-development-and-quality.mdc`)
+   - 可选进行调用方特有的参数校验
+
+## 三、RPC高级特性与治理
+
+### 【推荐】分布式链路追踪
+*   **【强制】** 所有RPC调用必须集成和正确传递分布式链路追踪信息（如 Trace ID, Span ID）。
+*   **实现方式**：
+    *   确保项目已引入并配置了兼容Dubbo的链路追踪组件（如 SkyWalking, Zipkin, OpenTelemetry）。
+    *   Dubbo框架通常会自动进行上下文的透传。`BaseRpcService` 或相关AOP切面应确保链路信息的创建、传递和清除。
+    *   日志中必须包含Trace ID，以便于跨服务追踪和问题排查 (参考 `@yupao-error-handling-and-operations.mdc` 的日志规范)。
+
+### 【推荐】RPC 服务降级与熔断
+*   **【推荐】** 为提高系统整体韧性，客户端在调用RPC服务时，应考虑实施服务降级与熔断策略。
+*   **实现方式**：
+    *   **Dubbo自身能力**：利用Dubbo提供的 `mock` 配置实现服务降级（如返回 `null`、空集合、默认值，或调用本地的降级方法）。
+    *   **整合弹性组件**：结合如 `Resilience4j` 或 `Sentinel` 等弹性组件，在RPC调用外层包装断路器、舱壁隔离、限流等逻辑。
+        *   **断路器 (Circuit Breaker)**：当某个RPC服务调用失败率或慢调用比例达到阈值时，断路器打开，后续请求在一段时间内快速失败或执行降级逻辑，避免对故障服务的持续冲击。
+        *   **服务降级 (Fallback)**：在RPC调用失败、超时或断路器打开时，执行预设的降级逻辑，保证核心业务流程的可用性或提供友好的用户提示。
+*   **策略配置**：降级和熔断策略（如失败阈值、熔断时长、半开状态的探测请求数）需要根据业务重要性、服务依赖关系和性能指标进行精细化配置和持续调优。
+*   **监控告警**：对断路器的状态变化（如打开、关闭、半开）和服务降级事件进行监控和告警。
