@@ -29,6 +29,8 @@ alwaysApply: true
 *   **`[project.optional-dependencies]`**: 定义可选的依赖组，例如 `dev`, `test`。
     *   `coze-mcp-server` 在 `pyproject.toml` 中定义了 `dev` 依赖。
     *   安装可选依赖：`uv pip install .[dev]`
+    *   **针对特定功能（如 CLI 工具）的可选依赖**: 许多包（例如 `mcp` Python SDK）会通过可选依赖项提供额外功能。例如，如果一个包提供了命令行工具，它可能会通过一个名为 `cli` 的 "extra" 来提供。安装时可以使用 `uv pip install package_name[cli]`。
+        *   参考 `modelcontextprotocol/python-sdk` 的 README ([mdc:https:/github.com/modelcontextprotocol/python-sdk/blob/main/README.md])，其中提到了 "standalone MCP development tools" (例如 `mcp run`, `mcp dev`)。这类工具通常就是通过类似 `mcp[cli]` 的方式安装的。开发者应查阅对应包的 `pyproject.toml` 或文档来确定可用的 "extras"。
 *   **`[project.urls]`**: 提供项目的相关链接，如 `Homepage`, `Repository`, `Bug Tracker`。
 *   **`[project.scripts]`**: (如果适用) 定义通过命令行可执行的脚本。对于 `coze-mcp-server` 这种通过 `python -m` 运行的包，可能不直接在这里定义，而是通过包的 `__main__.py`。
     *   `coze-mcp-server` 的 `README.md` 中配置 Claude.app/Zed 时，使用了 `python -m coze_mcp_server` 或 `uvx coze-mcp-server`。

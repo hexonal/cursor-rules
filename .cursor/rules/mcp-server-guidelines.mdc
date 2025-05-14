@@ -39,8 +39,67 @@ alwaysApply: true
 
 ## 3. 服务器端开发最佳实践
 
-*   **使用 MCP SDK**: 强烈推荐使用官方的 MCP SDK（例如 [modelcontextprotocol/python-sdk](mdc:https:/github.com/modelcontextprotocol/python-sdk)）。SDK 能够处理大部分协议的复杂性。
-    *   可以参考 `coze-mcp-server` 项目，它是一个基于 Python SDK 实现 MCP 服务器的良好示例。
+*   **使用 MCP SDK**: 强烈推荐使用官方的 MCP Python SDK (通常作为 `mcp` 包通过 pip 安装，其源码和详细文档/示例见 [modelcontextprotocol/python-sdk](mdc:https:/github.com/modelcontextprotocol/python-sdk))。该 SDK 极大地简化了服务器开发：
+    *   它能处理大部分底层 MCP 协议的复杂性。
+    *   提供了如 `FastMCP` 这样的高级抽象来快速搭建服务器，并通过装饰器（例如 `@mcp.resource`, `@mcp.tool`, `@mcp.prompt`）等便捷方式来定义资源、工具和提示，如其 README 中的示例所示。
+    *   对于需要更细致控制的场景，SDK 也支持使用低层级服务器接口。
+    *   可以参考 `coze-mcp-server` 项目，它是一个基于 Python SDK 实现 MCP 服务器的良好示例，展示了这些 SDK 特性的应用。
+
+    下面是两个来自官方 SDK README 的示例，展示了 `FastMCP` 和装饰器的用法：
+
+    **示例 1: Echo Server**
+    ```python
+    from mcp.server.fastmcp import FastMCP
+
+    mcp = FastMCP("Echo")
+
+
+    @mcp.resource("echo://{message}")
+    def echo_resource(message: str) -> str:
+        """Echo a message as a resource"""
+        return f"Resource echo: {message}"
+
+
+    @mcp.tool()
+    def echo_tool(message: str) -> str:
+        """Echo a message as a tool"""
+        return f"Tool echo: {message}"
+
+
+    @mcp.prompt()
+    def echo_prompt(message: str) -> str:
+        """Create an echo prompt"""
+        return f"Please process this message: {message}"
+    ```
+
+    **示例 2: SQLite Explorer**
+    ```python
+    import sqlite3
+
+    from mcp.server.fastmcp import FastMCP
+
+    mcp = FastMCP("SQLite Explorer")
+
+
+    @mcp.resource("schema://main")
+    def get_schema() -> str:
+        """Provide the database schema as a resource"""
+        conn = sqlite3.connect("database.db")
+        schema = conn.execute("SELECT sql FROM sqlite_master WHERE type='table'").fetchall()
+        return "\n".join(sql[0] for sql in schema if sql[0])
+
+
+    @mcp.tool()
+    def query_data(sql: str) -> str:
+        """Execute SQL queries safely"""
+        conn = sqlite3.connect("database.db")
+        try:
+            result = conn.execute(sql).fetchall()
+            return "\n".join(str(row) for row in result)
+        except Exception as e:
+            return f"Error: {str(e)}"
+    ```
+
 *   **模块化设计**: 将服务器逻辑划分为清晰的模块。模块化设计应遵循 [项目结构指南](mdc:rules/project-structure.mdc) 中关于包架构的建议。
 *   **异步处理**: 使用异步编程模型（如 Python 的 `asyncio`）来高效处理并发请求。
 *   **错误处理与日志记录**:
