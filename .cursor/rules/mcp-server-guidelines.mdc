@@ -54,19 +54,28 @@ alwaysApply: true
     mcp = FastMCP("Echo")
 
 
-    @mcp.resource("echo://{message}")
+    @mcp.resource("echo://{message}", 
+                  description="A simple echo resource that returns formatted messages",
+                  mimetype="text/plain")
     def echo_resource(message: str) -> str:
         """Echo a message as a resource"""
         return f"Resource echo: {message}"
 
 
-    @mcp.tool()
+    @mcp.tool(
+        name="echo_message",
+        description="Echoes back the provided message as a string"
+    )
     def echo_tool(message: str) -> str:
         """Echo a message as a tool"""
         return f"Tool echo: {message}"
 
 
-    @mcp.prompt()
+    @mcp.prompt(
+        name="echo_prompt",
+        description="Creates a simple prompt with the user's message",
+        parameters=[{"name": "message", "description": "The message to process", "required": True}]
+    )
     def echo_prompt(message: str) -> str:
         """Create an echo prompt"""
         return f"Please process this message: {message}"
@@ -81,7 +90,10 @@ alwaysApply: true
     mcp = FastMCP("SQLite Explorer")
 
 
-    @mcp.resource("schema://main")
+    @mcp.resource("schema://main", 
+                  description="Provides the database schema for inspection",
+                  mimetype="text/plain",
+                  cacheable=True)
     def get_schema() -> str:
         """Provide the database schema as a resource"""
         conn = sqlite3.connect("database.db")
@@ -89,7 +101,10 @@ alwaysApply: true
         return "\n".join(sql[0] for sql in schema if sql[0])
 
 
-    @mcp.tool()
+    @mcp.tool(
+        name="execute_sql_query",
+        description="Executes an SQL query against the database and returns the results as formatted text. Handles errors gracefully."
+    )
     def query_data(sql: str) -> str:
         """Execute SQL queries safely"""
         conn = sqlite3.connect("database.db")
@@ -99,6 +114,11 @@ alwaysApply: true
         except Exception as e:
             return f"Error: {str(e)}"
     ```
+
+    注意：与 `@mcp.tool()` 类似，建议为 `@mcp.resource()` 和 `@mcp.prompt()` 装饰器也提供详细的参数：
+    * 对于资源，提供 `description`、`mimetype` 和适当的缓存策略 (`cacheable`)
+    * 对于提示，提供 `name`、`description` 和清晰的 `parameters` 定义
+    * 这些详细定义对于 LLM 和自动化工具理解和有效使用你的 MCP 服务器非常重要
 
 *   **模块化设计**: 将服务器逻辑划分为清晰的模块。模块化设计应遵循 [项目结构指南](mdc:rules/project-structure.mdc) 中关于包架构的建议。
 *   **异步处理**: 使用异步编程模型（如 Python 的 `asyncio`）来高效处理并发请求。
