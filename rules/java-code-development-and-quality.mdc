@@ -201,6 +201,12 @@ alwaysApply: true
    - 数据传输rpc传入入参对象: XxxRpcReq
    - 数据传输rpc传入出参对象：XxxRpcResp
    - 实体类中的get/set方法使用lombok来完成
+   - dao实体类: XxxDO
+   - dao关联的myabtis-plus接口: XxxMapper XxxDO BaseMapper<XxxDO> {}
+   - dao服务接口：XxxDAO extends IService<XxxDO>
+   - dao服务实现：XxxDAOImpl extends ServiceImpl<XxxMapper, XxxDO> implements XxxDAO
+   - biz服务接口：XxxService
+   - biz服务实现：XxxServiceImpl
    - 请求对象：XxxReq
    - 响应对象：XxxResp
    - 服务接口：XxxService
