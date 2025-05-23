@@ -205,8 +205,8 @@ alwaysApply: true
    - dao关联的myabtis-plus接口: XxxMapper XxxDO BaseMapper<XxxDO> {}
    - dao服务接口：XxxDAO extends IService<XxxDO>
    - dao服务实现：XxxDAOImpl extends ServiceImpl<XxxMapper, XxxDO> implements XxxDAO
-   - biz服务接口：XxxService
-   - biz服务实现：XxxServiceImpl
+   - biz服务接口：XxxBizService
+   - biz服务实现：XxxBizServiceImpl
    - 请求对象：XxxReq
    - 响应对象：XxxResp
    - 服务接口：XxxService
