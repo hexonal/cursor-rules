@@ -15,6 +15,7 @@ alwaysApply: true
    - 方法的功能必须具有原子性，不可再分
    - 避免在一个方法中混合多个业务逻辑
    - 修改操作必须保证事务的原子性
+   - **【DDD增强】对于领域实体（Domain Entity），其方法应封装该实体自身的业务行为和状态变更逻辑，体现充血模型的特点。避免将属于实体的行为泄露到Service层。**
 
 2. 可读性原则：
    - 方法名必须清晰表达其功能
@@ -50,6 +51,7 @@ alwaysApply: true
    - 必须使用 @RequiredArgsConstructor 进行依赖注入
    - 必须实现对应的接口
    - 类名必须以 ServiceImpl 或 BizServiceImpl 结尾
+   - **【DDD增强】应用服务 (`ApplicationService`, 通常对应这里的 `XxxServiceImpl` 或 `XxxBizServiceImpl`) 主要负责编排领域对象（Entities, Value Objects, Domain Services）完成业务用例，处理事务、安全、通知等横切关注点，不应包含核心领域逻辑。核心领域逻辑应封装在领域实体和领域服务中。**
 
 2. 方法实现：
    - 必须添加 @Override 注解
@@ -118,9 +120,9 @@ alwaysApply: true
                     log.error("Transaction rollback failed", ex);
                 }
             }
-            // 将SQLException转换为com.hex.common.exception.BizException，参考 @java-error-handling-and-operations.mdc
+            // 将SQLException转换为com.hexonal.ht.common.exception.BizException，参考 @java-error-handling-and-operations.mdc
             // BizErrorCode.DATABASE_OPERATION_FAILED 为示例错误码，请替换为实际定义的错误码
-            throw new com.hex.common.exception.BizException(com.hex.common.exception.BizErrorCode.DATABASE_OPERATION_FAILED, "Database operation failed: " + e.getMessage(), e);
+            throw new com.hexonal.ht.common.exception.BizException(com.hexonal.ht.common.exception.BizErrorCode.DATABASE_OPERATION_FAILED, "Database operation failed: " + e.getMessage(), e);
         } finally {
             if (conn != null) {
                 try {
@@ -137,14 +139,14 @@ alwaysApply: true
       - 所有 `SQLException` 都必须被捕获。
       - 捕获异常后，如果事务需要回滚，则执行回滚操作。
       - 必须记录详细的错误日志，包含错误信息、堆栈、可能的业务上下文，遵循 `@java-error-handling-and-operations.mdc` 的日志规范。
-      - 最终应将底层的 `SQLException` (以及其他受检查异常或特定的运行时异常) 包装成或转换为 `com.hex.common.exception.BizException` (携带合适的 `BizErrorCode`) 向上抛出，遵循 `@java-error-handling-and-operations.mdc` 的异常处理规范。对于无法通过 `BizErrorCode` 归类的、非预期的运行时故障，可按该规范使用 `SystemException`。
+      - 最终应将底层的 `SQLException` (以及其他受检查异常或特定的运行时异常) 包装成或转换为 `com.hexonal.ht.common.exception.BizException` (携带合适的 `BizErrorCode`) 向上抛出，遵循 `@java-error-handling-and-operations.mdc` 的异常处理规范。对于无法通过 `BizErrorCode` 归类的、非预期的运行时故障，可按该规范使用 `SystemException`。
 
    e. **【推荐】Spring编程式事务**：
       - **优先推荐**：即使需要手动控制事务的执行点，也应优先考虑使用Spring提供的 `TransactionTemplate`。它简化了手动事务管理的复杂性，减少了样板代码，并能更好地集成Spring的事务同步和资源管理机制。
       - `TransactionTemplate` 示例:
         ```java
-        // import com.hex.common.exception.BizException;
-        // import com.hex.common.exception.BizErrorCode; // 假设BizErrorCode已定义
+        // import com.hexonal.ht.common.exception.BizException;
+        // import com.hexonal.ht.common.exception.BizErrorCode; // 假设BizErrorCode已定义
         @Autowired
         private TransactionTemplate transactionTemplate;
         // 可以注入其他需要在此事务中操作的Service或DAO组件，例如:
@@ -171,15 +173,15 @@ alwaysApply: true
                 } catch (DataAccessException e) { // Spring的通用数据访问异常
                     status.setRollbackOnly(); // 标记事务为仅回滚
                     log.error("Transaction failed due to DataAccessException, rolling back.", e);
-                    // 将DataAccessException转换为com.hex.common.exception.BizException
+                    // 将DataAccessException转换为com.hexonal.ht.common.exception.BizException
                     // BizErrorCode.TRANSACTION_FAILED_DATA_ACCESS 为示例错误码
-                    throw new com.hex.common.exception.BizException(com.hex.common.exception.BizErrorCode.TRANSACTION_FAILED_DATA_ACCESS, "Operation failed within transaction due to DataAccessException", e);
+                    throw new com.hexonal.ht.common.exception.BizException(com.hexonal.ht.common.exception.BizErrorCode.TRANSACTION_FAILED_DATA_ACCESS, "Operation failed within transaction due to DataAccessException", e);
                 } catch (Exception e) { // 可根据需要捕获更具体的业务异常或检查型异常
                     status.setRollbackOnly();
                     log.error("Transaction failed due to an unexpected exception, rolling back.", e);
-                    // 转换为com.hex.common.exception.BizException
+                    // 转换为com.hexonal.ht.common.exception.BizException
                     // BizErrorCode.TRANSACTION_FAILED_UNEXPECTED 为示例错误码
-                    throw new com.hex.common.exception.BizException(com.hex.common.exception.BizErrorCode.TRANSACTION_FAILED_UNEXPECTED, "Operation failed unexpectedly within transaction", e);
+                    throw new com.hexonal.ht.common.exception.BizException(com.hexonal.ht.common.exception.BizErrorCode.TRANSACTION_FAILED_UNEXPECTED, "Operation failed unexpectedly within transaction", e);
                 }
             });
         }
@@ -196,39 +198,46 @@ alwaysApply: true
 
 ### 【强制】命名规范
 1. 类命名：
-   - 领域模型类：XxxDO
-   - 数据传输对象：XxxDTO
-   - 数据传输rpc传入入参对象: XxxRpcReq
-   - 数据传输rpc传入出参对象：XxxRpcResp
-   - 实体类中的get/set方法使用lombok来完成
-   - dao实体类: XxxDO
-   - dao关联的myabtis-plus接口: XxxMapper XxxDO BaseMapper<XxxDO> {}
-   - dao服务接口：XxxDAO extends IService<XxxDO>
-   - dao服务实现：XxxDAOImpl extends ServiceImpl<XxxMapper, XxxDO> implements XxxDAO
-   - biz服务接口：XxxBizService
-   - biz服务实现：XxxBizServiceImpl
-   - 请求对象：XxxReq
-   - 响应对象：XxxResp
-   - 服务接口：XxxService
-   - 服务实现：XxxServiceImpl
-   - 控制器：XxxController
-   - 工具类：XxxUtils
-   - 操作redis相关的类: Redisson
-   - 操作分页相关的类: PageUtils
-   - rpc的接口命名: XxxRpcService
-   - rpc的接口实现命名: XxxRpcServiceImpl
-   - rpc调用方接口命名: XxxRpcProxyService
-   - rpc调用接口实现命名: XxxRpcServiceImpl
-   - rpc实现统一需要继承: extends BaseRpcService
-   - 实体类需要实现: implements Serializable
+   - 领域模型类：
+     - **【DDD增强】领域实体 (Entity, 具有唯一标识，封装核心业务逻辑和状态)：`Xxx` 或 `XxxEntity` (例如 `Order`, `UserEntity`)。实体类应包含其自身的业务方法，体现充血特性。**
+     - **【DDD增强】值对象 (Value Object, 无唯一标识，描述性属性集合)：`XxxValue` 或直接使用描述性名称 (例如 `AddressValue`, `Money`)。**
+     - **【DDD增强】领域服务 (Domain Service, 当某些领域逻辑不适合放在任何一个实体或值对象中时使用)：`XxxDomainService` (例如 `OrderPricingDomainService`)。**
+     - **【DDD增强】应用服务 (Application Service, 协调领域层对象完成用例，处理事务、权限等)：`XxxAppService` 或保持现有的 `XxxService` / `XxxBizService` （其实现类为 `XxxAppServiceImpl` / `XxxServiceImpl` / `XxxBizServiceImpl`）。**
+     - **【DDD增强】工厂 (Factory, 负责复杂对象的创建)：`XxxFactory` (例如 `OrderFactory`)。**
+     - **【DDD增强】仓库 (Repository, 负责领域对象的持久化和读取，提供集合一样的接口操作领域对象)：`XxxRepository` (例如 `OrderRepository`)。其实现类通常位于DAO层或一个独立的持久化层。**
+   - 数据持久化对象 (DO, Data Object, 与数据库表结构一一对应，用于ORM)：`XxxDO`。**注意：在DDD中，DO主要用于数据持久化，领域实体 (`XxxEntity`) 承载业务逻辑。Repository负责Entity与DO之间的转换。**
+   - 数据传输对象 (DTO, Data Transfer Object, 用于应用层与外部（如表示层、RPC调用方）之间的数据传输)：`XxxDTO`。
+   - 数据传输rpc传入入参对象: `XxxRpcReq` (可视为一种特定用途的DTO)
+   - 数据传输rpc传入出参对象：`XxxRpcResp` (可视为一种特定用途的DTO)
+   - 实体类中的get/set方法使用lombok来完成 (适用于DO和DTO，领域实体的方法应具有业务含义，不仅仅是getter/setter)
+   - 请求对象：`XxxReq` (通常用于Controller层，可视为一种特定用途的DTO)
+   - 响应对象：`XxxResp` (通常用于Controller层，可视为一种特定用途的DTO)
+   - dao实体类: `XxxDO`
+   - dao关联的myabtis-plus接口: `XxxMapper extends BaseMapper<XxxDO>`
+   - dao服务接口：`XxxDAO extends IService<XxxDO>`
+   - dao服务实现：`XxxDAOImpl extends ServiceImpl<XxxMapper, XxxDO> implements XxxDAO`
+     - **【DDD增强】或者，Repository接口 `XxxRepository`，其实现 `XxxRepositoryImpl` 内部可以依赖 `XxxDAO` 或 `XxxMapper` 来完成数据持久化。**
+   - biz服务接口：`XxxService` (或 `XxxAppService`)
+   - biz服务实现：`XxxServiceImpl` (或 `XxxAppServiceImpl`)
+   - 控制器：`XxxController`
+   - 工具类：`XxxUtils`
+   - 操作redis相关的类: `hexonalJedis`
+   - 操作分页相关的类: `PageUtils`
+   - rpc的接口命名: `XxxRpcService`
+   - rpc的接口实现命名: `XxxRpcServiceImpl`
+   - rpc调用方接口命名: `XxxRpcProxyService`
+   - rpc调用接口实现命名: `XxxRpcProxyServiceImpl`
+   - rpc实现统一需要继承: `extends BaseRpcService`
+   - 实体类需要实现: `implements Serializable` (DO和DTO通常需要序列化，领域实体按需)
 2. 方法命名：
-   - 获取单个对象：getXxx
-   - 获取多个对象：listXxx
-   - 统计数量：countXxx
-   - 新增：createXxx
-   - 修改：updateXxx
-   - 删除：deleteXxx
-   - 分页: pageXXX
+   - **【DDD增强】领域实体的方法命名应直接体现业务动作，例如 `order.cancel()`，`product.applyDiscount(discountRate)`。**
+   - 获取单个对象：`getXxx` (用于应用服务或仓库) 或 `findXxx` (常用于仓库)
+   - 获取多个对象：`listXxx` (用于应用服务或仓库) 或 `findAllXxx` (常用于仓库)
+   - 统计数量：`countXxx`
+   - 新增：`createXxx` (用于应用服务) 或 `saveXxx` / `addXxx` (常用于仓库)
+   - 修改：`updateXxx` (用于应用服务) 或 `saveXxx` (常用于仓库，表示保存状态变更)
+   - 删除：`deleteXxx` (用于应用服务或仓库)
+   - 分页: `pageXXX`
 3. 变量命名：
    - 常量：全大写下划线分隔
    - 变量：驼峰命名
@@ -299,11 +308,11 @@ alwaysApply: true
 
 ### 【强制】编码实践
 1. 异常处理：
-   - 应用中所有通过 `throw` 语句显式抛出或转换的异常，应统一使用 `com.hex.common.exception.BizException`（参考 `com.hex.common.exception.BizException.java` 文件）。
-   - `BizException` 通过其错误码（如 `com.hex.common.exception.BizErrorCode`）区分不同类型的错误（业务错误、服务错误、可预期的系统操作错误）。对于极其罕见的、无法通过 `BizErrorCode` 归类的运行时故障，可使用 `SystemException` (参考 `@java-error-handling-and-operations.mdc` 中的异常分类)。
+   - 应用中所有通过 `throw` 语句显式抛出或转换的异常，应统一使用 `com.hexonal.ht.common.exception.BizException`（参考 `com.hexonal.ht.common.exception.BizException.java` 文件）。
+   - `BizException` 通过其错误码（如 `com.hexonal.ht.common.exception.BizErrorCode`）区分不同类型的错误（业务错误、服务错误、可预期的系统操作错误）。对于极其罕见的、无法通过 `BizErrorCode` 归类的运行时故障，可使用 `SystemException` (参考 `@java-error-handling-and-operations.mdc` 中的异常分类)。
    - 必须记录详细日志，遵循 `@java-error-handling-and-operations.mdc` 的日志规范。
    - 必须进行统一异常处理（如通过 `@RestControllerAdvice`），遵循 `@java-error-handling-and-operations.mdc` 的异常响应处理规范。
-2. 日志打印：(部分内容与 java-error-handling.mdc 重叠，后续统一处理)
+2. 日志打印：(部分内容与 hexonal-error-handling.mdc 重叠，后续统一处理)
    - 必须使用Log4j2
    - 必须使用占位符
    - 必须进行日志级别判断
@@ -312,265 +321,10 @@ alwaysApply: true
    - 必须私有构造函数
    - 必须使用静态方法
    - 必须编写单元测试
-4. 配置加载： (部分内容与 java-error-handling.mdc 重叠，后续统一处理)
+4. 配置加载： (部分内容与 hexonal-error-handling.mdc 重叠，后续统一处理)
    - 必须使用Apollo配置中心
    - 必须使用@ConfigurationProperties
    - 必须进行配置验证
-
-### 【推荐】不可变性 (Immutability) 的深入应用
-*   **【推荐】** 除了 `record` 类型外，在设计普通类（尤其是领域模型、值对象、DTO等）时，也应优先考虑不可变性。
-*   **实现方式**：
-    *   类声明为 `final` (如果不再有子类)。
-    *   所有字段声明为 `private final`。
-    *   不提供 `setter` 方法或任何修改内部状态的方法。
-    *   如果字段是可变对象（如集合、`Date`），在构造函数中进行防御性拷贝（defensive copy）以保存传入对象的状态，并在 `getter` 方法中返回其拷贝或不可变视图（如 `Collections.unmodifiableList()`）。
-        ```java
-        public final class ImmutableUser {
-            private final String name;
-            private final List<String> roles;
-
-            public ImmutableUser(String name, List<String> roles) {
-                this.name = name;
-                this.roles = List.copyOf(roles); // 防御性拷贝，JDK 10+
-                // 或者 this.roles = new ArrayList<>(roles); 对于更早版本，并在getter中返回Collections.unmodifiableList
-            }
-
-            public String getName() {
-                return name;
-            }
-
-            public List<String> getRoles() {
-                return Collections.unmodifiableList(roles); // 返回不可变视图
-            }
-        }
-        ```
-*   **优势**：不可变对象本质上是线程安全的，易于理解和推理，可以安全地共享，减少副作用，并简化并发编程。
-
-### 【推荐】Stream API 使用细化规范
-*   **可读性**：
-    *   **【推荐】** 避免编写过于冗长和复杂的单行 Stream 操作链。如果一个 Stream 管道包含多个中间操作且逻辑复杂，应考虑将其拆分为多个步骤或使用局部变量来提高可读性。
-    *   **【推荐】** 为 lambda 表达式中的参数选择有意义的名称。
-*   **性能考量**：
-    *   **【注意】** 了解 Stream 操作的潜在性能开销，尤其是在处理大数据集或性能敏感的代码路径时。例如，某些中间操作（如 `sorted()`, `distinct()`）可能需要缓冲所有元素。
-    *   **【避免】** 在 Stream 操作（特别是 `map`, `filter` 等中间操作）中执行阻塞I/O或重量级的计算密集型任务，除非明确使用并行Stream并已评估其适用性。
-    *   **【推荐】** 对于简单集合操作，传统循环有时可能比 Stream 更高效或更易读。
-*   **副作用限制**：
-    *   **【强制】** Stream 操作的 lambda 表达式应主要用于数据转换和计算，应避免或严格限制在其中产生副作用（即修改外部状态）。唯一的例外通常是终端操作如 `forEach()`（用于消费结果）或特定的收集器。
-*   **并行Stream (`parallelStream()`) 使用**：
-    *   **【慎用】** 谨慎使用并行Stream。它并非万能药，不当使用可能导致性能下降甚至死锁。
-    *   **适用场景**：仅在数据集足够大、单个元素处理耗时较长、任务可以有效并行分解且无共享可变状态竞争时考虑。
-    *   **注意事项**：并行Stream默认共享公共的 `ForkJoinPool.commonPool()`。如果任务是阻塞性的，可能会耗尽池中的线程，影响系统其他部分的并行处理能力。考虑使用自定义的 `ForkJoinPool` 执行并行Stream操作。
-*   **关闭流**：
-    *   **【注意】** 对于由I/O资源（如 `Files.lines()`）支持的流，必须使用 `try-with-resources` 语句或显式调用 `close()` 方法以确保底层资源被释放。
-
-### 【推荐】`Optional` 使用最佳实践
-*   **返回类型**：
-    *   **【推荐】** 当一个方法可能无法返回期望的值时（例如，查找一个可能不存在的对象），应返回 `Optional<T>` 而不是 `null`，以明确表示值缺失的可能性。
-*   **字段与参数**：
-    *   **【不推荐】** 通常不推荐将 `Optional` 用作类字段的类型。如果一个字段是可选的，可以直接将其声明为 `T type` 并允许为 `null`（需文档说明），或通过构造函数/工厂方法确保其总被初始化。
-    *   **【慎用】** 将 `Optional<T>` 作为方法参数。通常，如果参数是可选的，可以提供方法重载，或者接受一个可能为 `null` 的 `T` 类型参数并在方法内部处理（例如，使用 `Optional.ofNullable()`包装）。
-*   **处理方式**：
-    *   **【推荐】** 优先使用 `Optional` 的组合方法，如 `map()`, `flatMap()`, `filter()`, `orElse()`, `orElseGet()`, `orElseThrow()` 来处理可能缺失的值，而不是过多依赖 `isPresent()` 后跟 `get()`。
-        ```java
-        // 推荐
-        String value = findUser(id)
-                        .map(User::getName)
-                        .orElse("Default Name");
-
-        // 不太推荐（但有时不可避免）
-        Optional<User> userOpt = findUser(id);
-        if (userOpt.isPresent()) {
-            String name = userOpt.get().getName();
-            // ...
-        }
-        ```
-*   **禁止无检查的 `get()`**：
-    *   **【强制】** 在调用 `get()` 方法之前，必须通过 `isPresent()` 检查或通过其他方式（如 `orElseThrow()`）确保 `Optional` 包含值。
-*   **避免创建不必要的 `Optional`**：
-    *   **【注意】** 如果一个值已知永远不会是 `null`，则不应将其包装在 `Optional` 中。
-
-### 【新增强制】日期与时间 API (`java.time`) 的全面使用
-*   **【强制】** 项目中所有日期和时间相关的操作，必须使用 `java.time` 包（如 `LocalDate`, `LocalTime`, `LocalDateTime`, `ZonedDateTime`, `Instant`, `Duration`, `Period`），并完全替换掉旧的 `java.util.Date`, `java.util.Calendar`, 和 `java.text.SimpleDateFormat`。
-*   **不可变性**：`java.time` 包中的所有核心类都是不可变的，应充分利用此特性。
-*   **时区处理**：
-    *   **【强制】** 在处理跨时区或需要精确时间点的场景时，必须明确处理时区。推荐使用 `ZonedDateTime` 或 `Instant`。
-    *   **【推荐】** 服务端存储时间戳时，优先使用 `Instant` (通常代表UTC时间戳)。与数据库交互时，确保数据库字段类型能正确存储时间戳或带时区的时间。
-*   **格式化与解析**：
-    *   **【强制】** 统一使用 `java.time.format.DateTimeFormatter` 进行日期时间的格式化和解析。
-    *   **【推荐】** 预定义常用的 `DateTimeFormatter` 实例作为常量，以提高性能和代码一致性。
-*   **与旧API交互**：
-    *   **【注意】** 当需要与仍在使用旧日期时间API的库或系统交互时，可以使用 `java.util.Date.from(Instant)`、`java.util.Date.toInstant()` 以及 `java.sql.Timestamp` 与 `LocalDateTime` 之间的转换方法。
-
-### 【推荐】运用JDK 21+新特性提升代码质量
-
-1.  **记录类型 (Records)**:
-    *   **【推荐】** 对于主要用作不可变数据载体（如DTOs、配置对象、简单值对象）的类，优先使用 `record` 类型。
-        ```java
-        // 示例：定义一个表示坐标点的Record
-        public record Point(int x, int y) {}
-
-        // 示例：定义一个更复杂的DTO
-        public record UserProfileDTO(String userId, String username, String email) {}
-        ```
-    *   **优势**：自动生成构造函数、`equals()`、`hashCode()`、`toString()` 以及字段的访问器方法，极大简化代码，减少样板代码。
-    *   **注意**：Record 默认是 `final` 的，并且其字段也是 `final` 的。它们天然适合表示不可变数据。如果需要可变性，或者有复杂的继承需求，传统类仍然是合适的选择。
-
-2.  **记录模式 (Record Patterns - JEP 440)**:
-    *   **【推荐】** 在 `instanceof` 和 `switch` 语句中，使用记录模式进行解构和类型匹配，以提高代码的可读性和简洁性。
-        ```java
-        // instanceof 示例
-        Object obj = new Point(10, 20);
-        if (obj instanceof Point(int x, int y)) {
-            System.out.println("Point coordinates: x = " + x + ", y = " + y);
-        }
-
-        // switch 示例 (结合模式匹配)
-        sealed interface Shape permits Circle, Rectangle {}
-        record Circle(double radius) implements Shape {}
-        record Rectangle(double length, double width) implements Shape {}
-
-        static double getArea(Shape shape) {
-            return switch (shape) {
-                case Circle(var r) -> Math.PI * r * r;
-                case Rectangle(var l, var w) -> l * w;
-                // 不需要 default，因为 Shape 是 sealed 且所有子类型都被覆盖
-            };
-        }
-        ```
-    *   **优势**：减少了显式的类型转换和字段提取代码，使条件逻辑更清晰。
-
-3.  **switch 模式匹配 (Pattern Matching for switch - JEP 441)**:
-    *   **【推荐】** 扩展 `switch` 语句和表达式的能力，使其可以对对象的类型和结构进行匹配，并根据匹配结果执行相应逻辑。
-    *   **类型匹配与解构**：如上一个记录模式的 `switch` 示例所示。
-    *   **Guarded Patterns (守护模式)**：允许在 `case` 标签中使用 `when` 子句添加额外条件。
-        ```java
-        static String processValue(Object obj) {
-            return switch (obj) {
-                case String s -> "String: " + s;
-                case Integer i when i > 0 -> "Positive Integer: " + i;
-                case Integer i -> "Integer: " + i; // Handles non-positive integers
-                case null -> "Null object"; // JDK 21 支持 case null
-                default -> "Unknown type";
-            };
-        }
-        ```
-    *   **父类型匹配**：可以在 `case` 中匹配父类型，但要注意顺序，更具体的类型应放在前面。
-    *   **【强制】** 当 `switch` 覆盖了所有已知类型（例如，对于 `sealed` 类或枚举），并且作为表达式使用时，不应提供 `default` 子句，以利用编译器的详尽性检查。如果作为语句使用或未覆盖所有情况，则必须提供 `default` 子句或确保所有可能情况都被处理。
-    *   **优势**：使复杂的条件判断和数据提取逻辑更富有表现力、更安全、更易于维护。
-
-4.  **序列化集合 (Sequenced Collections - JEP 431)**:
-    *   **【推荐】** 当需要一个具有明确遇到顺序（encounter order）的集合，并且需要方便地访问第一个/最后一个元素或逆序视图时，使用新的 `SequencedCollection`、`SequencedSet`、`SequencedMap` 接口。
-    *   `List` 和 `Deque` 天然实现了 `SequencedCollection`。`LinkedHashSet` 实现了 `SequencedSet`。`LinkedHashMap` 实现了 `SequencedMap`。
-        ```java
-        // SequencedCollection (List is one)
-        List<String> list = new ArrayList<>(List.of("a", "b", "c"));
-        System.out.println(list.getFirst()); // "a"
-        System.out.println(list.getLast());  // "c"
-        list.addFirst("x"); // ["x", "a", "b", "c"]
-        list.addLast("z");  // ["x", "a", "b", "c", "z"]
-        SequencedCollection<String> reversedList = list.reversed(); // ["z", "c", "b", "a", "x"] (view)
-
-        // SequencedSet (LinkedHashSet is one)
-        SequencedSet<String> set = new LinkedHashSet<>(List.of("one", "two", "three"));
-        System.out.println(set.getFirst()); // "one"
-        set.addLast("four");
-
-        // SequencedMap (LinkedHashMap is one)
-        SequencedMap<String, Integer> map = new LinkedHashMap<>();
-        map.put("apple", 1);
-        map.put("banana", 2);
-        map.putLast("orange", 3); // Adds to the end
-        System.out.println(map.firstEntry().getKey()); // "apple"
-        System.out.println(map.reversed().sequencedKeySet()); // ["orange", "banana", "apple"] (view)
-        ```
-    *   **优势**：提供了一套统一的API来操作有序集合的端点和顺序，简化了代码。
-
-5.  **字符串模板 (String Templates - JEP 459, 第二预览版)**:
-    *   **【推荐】** (预览特性，生产使用需谨慎评估并启用预览) 用于构造包含运行时计算值的字符串。比传统的字符串拼接或 `String.format` 更安全、更易读、更灵活。
-        ```java
-        // 需要启用预览特性: --enable-preview
-        // 示例：使用 STR 模板处理器
-        String name = "Joan";
-        int age = 25;
-        String greeting = STR."My name is \{name} and I am \{age} years old.";
-        // greeting 会是 "My name is Joan and I am 25 years old."
-
-        // 示例：使用 FMT 模板处理器 (类似 String.format)
-        // String formatted = FMT."Value is %.2f\{value}"; 
-
-        // 示例：多行字符串模板
-        String html = STR."""
-                      <html>
-                        <body>
-                          <p>Hello, \{name}!</p>
-                        </body>
-                      </html>
-                      """;
-        ```
-    *   **优势**：提高了构建复杂字符串的可读性和安全性（例如 `STR` 处理器会自动进行必要的转义，防止注入问题）。
-    *   **注意**：作为预览特性，其API和行为可能在未来的Java版本中发生变化。仅在团队充分理解并接受预览特性风险时使用。
-
-6.  **作用域值 (Scoped Values - JEP 464, 第二预览版)**:
-    *   **【推荐】** (预览特性，生产使用需谨慎评估并启用预览) 用于在线程内以及线程的子线程间共享不可变数据，尤其适用于虚拟线程环境。作为 `ThreadLocal` 的一种更安全、更高效的替代方案。
-        ```java
-        // 需要启用预览特性: --enable-preview
-        // public final static ScopedValue<User> LOGGED_IN_USER = ScopedValue.newInstance();
-        //
-        // ScopedValue.where(LOGGED_IN_USER, currentUser)
-        //            .run(() -> {
-        //                // 在这个 lambda 表达式内部以及它调用的任何方法中
-        //                // LOGGED_IN_USER.get() 会返回 currentUser
-        //                // 如果 LOGGED_IN_USER 未绑定值而调用 get() 会抛出 NoSuchElementException
-        //                // 如果 LOGGED_IN_USER.isBound() 为 false
-        //
-        //                // 示例：在Web请求处理中传递用户信息
-        //                // webRequestProcessor.processRequest();
-        //            });
-        //
-        // // 在 processRequest 或其调用的方法内部:
-        // // if (LOGGED_IN_USER.isBound()) {
-        // //    User user = LOGGED_IN_USER.get();
-        // //    // ... 使用用户信息
-        // // }
-        ```
-    *   **优势**：不可变性、有限的生命周期（绑定到 `run` 方法的执行）、高效的继承（对于虚拟线程尤其重要），避免了 `ThreadLocal` 的一些常见陷阱（如内存泄漏、隐式数据传递）。
-    *   **注意**：同为预览特性，使用前需谨慎。
-
-7.  **未命名模式和变量 (Unnamed Patterns and Variables - JEP 456, 第二预览版)**:
-    *   **【推荐】** (预览特性) 当模式匹配或变量声明是必需的，但其值或名称在代码中未使用时，使用下划线 `_` 作为占位符。
-        ```java
-        // 需要启用预览特性: --enable-preview
-        // 记录模式中的未使用组件
-        // if (obj instanceof Point(int x, _)) { /* x is used, y is not */ }
-
-        // switch 中的未使用模式变量
-        // switch (order) {
-        //    case Order(User user, _, Address _) when user.isPreferred() -> ... // items and shippingAddress not used
-        //    ...
-        // }
-
-        // try-with-resources 中未使用的资源
-        // try (var _ = ScopedValue.where(...)) { ... }
-
-        // lambda 参数未使用
-        // BiConsumer<String, String> logger = (fileName, _) -> System.out.println("Processing file: " + fileName);
-
-        // catch 块中未使用的异常参数 (JDK 7 已支持，此处为模式匹配扩展)
-        // try { ... } catch (Exception _) { System.err.println("An error occurred."); }
-        ```
-    *   **优势**：提高代码清晰度，明确表示某些变量是有意未使用的。可以减少编译器警告，并帮助静态分析工具更好地理解代码意图。
-    *   **注意**：预览特性。
-
-8.  **外部函数与内存API (Foreign Function & Memory API - JEP 454, 第三预览版)**:
-    *   **【慎用】** (预览特性) 用于与Java运行时之外的代码和数据进行互操作（例如调用本地库C、C++等）。
-    *   **适用场景**：需要调用本地库以实现特定功能（如高性能计算、操作系统特定API），或操作堆外内存。
-    *   **复杂性与风险**：此API功能强大但使用复杂，不当使用可能导致JVM崩溃或安全问题。
-    *   **规范**：
-        *   **封装**：所有对FFM API的直接使用必须封装在专门的、职责清晰的类或模块中。
-        *   **严格审查**：涉及FFM API的代码必须经过严格的代码审查，重点关注内存安全、资源管理和错误处理。
-        *   **替代方案优先**：在有纯Java或成熟JNI/JNA库可以满足需求时，应优先考虑这些方案，除非FFM API能带来显著的性能或功能优势。
-        *   **文档**：必须提供详尽的文档，说明本地函数的签名、内存布局、线程安全性以及任何使用约束。
-    *   **注意**：预览特性，且具有较高的使用门槛和风险。
 
 ### 【强制】依赖注入规范
 1. 构造器注入：
@@ -608,12 +362,12 @@ alwaysApply: true
    - 禁止修改事务传播行为
    - 如需调整事务配置，必须单独评估影响
 
-5. 异常处理： (此部分与 java-error-handling.mdc 高度相关，后续统一)
+5. 异常处理： (此部分与 hexonal-error-handling.mdc 高度相关，后续统一)
    - 禁止删除现有的异常处理逻辑
    - 禁止修改异常抛出链
    - 可以增加新的异常处理，但不能影响现有流程
 
-6. 日志记录： (此部分与 java-error-handling.mdc 高度相关，后续统一)
+6. 日志记录： (此部分与 hexonal-error-handling.mdc 高度相关，后续统一)
    - 禁止删除现有的关键日志
    - 禁止修改日志级别
    - 可以增加新的日志记录点
@@ -634,6 +388,7 @@ alwaysApply: true
    - 批量操作必须控制数量
    - 必要时使用缓存优化
    - 代码需要考虑性能问题，避免代码产生一些阻塞性的问题
+   - **【DDD增强】在充血模型中，领域实体的方法可能会触发关联对象的加载（懒加载或即时加载）。需要关注N+1查询问题，通过Repository层进行优化，或在领域服务中进行批量操作的协调。**
 
 2. 代码组织：
    - 相关的字段放在一起
@@ -641,6 +396,7 @@ alwaysApply: true
    - 公共方法放在前面
    - 私有方法放在后面
    - 增加适当的换行,避免代码都堆这一坨,导致review过乱
+   - **【DDD增强】领域模型内部：实体类应将与其状态紧密相关的行为组织在一起。聚合根（Aggregate Root）应负责其边界内所有对象的一致性。**
 
 3. 可维护性要求：
    - 代码必须符合阿里巴巴Java开发手册规范
@@ -802,3 +558,129 @@ alwaysApply: true
 ### 【强制】文档同步
 1.  **及时更新**：代码修改后，如果涉及到架构设计、接口定义、重要业务逻辑、配置项等，相关的设计文档、API文档（如Swagger）、README、注释等必须同步更新。
 2.  **变更记录**：对于重要的接口或功能变更，建议在文档中保留清晰的变更历史记录。
+3.  **【DDD增强】架构图与模型图**：在技术方案文档中，推荐使用 Mermaid 语法绘制领域模型图（如聚合、实体、值对象关系图）、限界上下文映射图等，以清晰表达DDD设计。
+
+---
+
+## 五、AI辅助编码与规范融合实践
+
+### 5.1 激活AI高级能力辅助编码与合规
+- **代码库模式检索与应用 (如引导AI调用 `codebase_search`, `grep_search`)**: 当需要实现特定功能或模式，但不确定如何在当前项目中最佳实践时，可引导AI利用代码搜索能力，在项目中查找符合 `@java-code-development-and-quality.mdc` 规范的现有实现作为参考。例如，查找特定异常处理、日志格式、事务管理或设计模式的合规应用实例。
+- **复杂编码任务的结构化拆解 (如引导AI调用 `mcp_sequential-thinking_sequentialthinking`)**: 对于复杂的函数实现、模块重构或算法设计，可以引导AI运用结构化思考能力，将任务分解为更小、更易管理步骤。确保每一步的设计和实现都考虑到本规范的各项要求（如方法原子性、参数校验、异常处理、日志记录等），从而系统性地构建出高质量且合规的代码。
+- **库使用与最佳实践探索 (如引导AI调用 `mcp_context7_resolve-library-id`, `mcp_context7_get-library_docs`)**: 在引入新库或使用现有库的复杂功能时，可引导AI调用文档获取能力，深入理解库的API、最佳实践和潜在陷阱。这有助于编写出更健壮、高效且符合预期的代码，避免不当使用导致的质量问题。
+
+### 5.2 AI作为编码规范的实时顾问
+- **即时规范查询与解读**：在编码过程中，遇到对本规范 (`@java-code-development-and-quality.mdc`) 具体条款（如命名约定、方法设计原则、异常处理方式、注释标准等）的疑问时，可以直接向AI提问。例如："请解释一下本规范中关于Service层方法原子性的要求"，或"根据本规范，DTO的字段注释应该包含哪些内容？"
+- **代码片段合规性检查**：可以粘贴少量代码片段，并要求AI基于本规范的具体章节或条款进行快速检查。例如："帮我看看这段代码的日志打印是否符合 `@java-code-development-and-quality.mdc` 的日志规范？"，或者在重构时："这段旧代码在事务处理方面有哪些不符合本规范的地方，应该如何修改？"
+- **最佳实践建议**：针对特定场景，可以询问AI在本规范框架下的推荐做法。例如："我需要在BizServiceImpl中处理一个可能调用多个DAO操作的业务逻辑，并确保整体事务性，根据规范，推荐使用声明式事务还是编程式事务？如果是编程式，规范中推荐哪种方式？"
+
+### 5.3 引导AI产出合规的高质量代码
+- **明确的、基于规范的指令**：在要求AI生成代码时（如创建新的Controller、Service、DAO、DTO或工具类），指令中应明确包含需遵循的规范要点。例如："请帮我创建一个名为`ProductServiceImpl`的类。它应位于`biz`模块。在确定其具体包路径时，请**严格遵循** `@java-project-architecture-and-structure.mdc` 中定义的项目包结构规范，该规范通常要求在项目基础包名（如 `com.hexonal.{项目标识}`）下，根据模块类型（如 `biz`）和具体业务模块（如 `{模块}`）来组织，形成类似 `com.hexonal.{项目标识}.biz.{模块}.service.impl` 的结构。请确保将占位符 `{项目标识}` 和 `{模块}` 替换为当前项目的实际名称。同时，确保使用构造器注入，类和方法注释完整，所有类名、方法名、变量名均严格遵守 `@java-code-development-and-quality.mdc` 中的命名规范，并遵循本规范中关于Service层方法设计（参数校验、业务处理、结果处理分层）的要求。"
+- **结构化代码生成**：对于需要遵循特定结构的代码（如`XxxServiceImpl`的模板、符合`@java-code-development-and-quality.mdc`命名规范的`XxxReq`/`XxxResp`的字段定义、单元测试类的骨架），可以要求AI直接生成符合规范的框架代码，然后开发者再填充具体的业务逻辑。
+- **合规性重构辅助**：当发现现有代码不符合规范时，可以向AI描述问题并引用相关规范条款（例如 `@java-code-development-and-quality.mdc` 中关于命名或异常处理的规定），要求其提供重构建议或直接生成重构后的代码。例如："这段代码的异常处理不符合 `@java-code-development-and-quality.mdc` 中关于异常转换和日志记录的要求，请帮我重构它，确保所有类和方法名都符合驼峰命名法。"
+
+### 5.4 AI辅助的代码质量保障与提升
+- **初步代码审查助手**：在提交代码进行人工Code Review之前，可以先让AI基于本规范进行一轮预审查。AI可以帮助识别一些较为明显的规范偏离点，如命名不规范、注释缺失、未使用推荐的注解、魔法值使用、过于复杂的表达式等。
+- **单元测试用例生成与优化**：可以要求AI为特定的方法或类生成符合本规范（如测试方法命名、断言使用、边界条件考虑）的单元测试用例。也可以让AI分析现有测试用例，看是否覆盖了所有重要分支和异常路径，并提出优化建议。
+- **识别潜在的代码坏味道**：虽然AI可能无法完全替代资深开发者的判断，但可以引导其识别一些常见的代码坏味道，如方法过长、参数过多、重复代码等，并结合规范给出初步的优化方向。
+
+### 5.5 与AI协作的持续学习与反馈闭环
+- **将AI反馈视为学习机会**：当AI基于规范指出代码问题或提出改进建议时，开发者应将其视为一次加深规范理解和提升编码技能的机会。
+- **用规范校准AI**：如果AI生成的代码不完全符合本规范，开发者应进行修正，并可以将修正前后的对比和规范要点反馈给AI（如果AI支持此类学习交互），或者至少在后续提问中更精确地引导AI。这种互动有助于AI更好地适应项目的编码标准。
+- **共同演进规范与实践**：在与AI协作编码的过程中，如果发现某些规范条款在AI辅助下难以高效执行，或者AI的某些建议超出了当前规范但确实更优，可以作为讨论和修订规范的输入，促进规范与AI辅助开发实践的共同进步。
+
+## 六、领域驱动设计（DDD）与充血模型实践 (变种DDD)
+
+本章节旨在指导如何在现有Java项目规范体系下，有效地融合领域驱动设计（DDD）的核心思想，特别是充血模型，以构建更具业务表达力、可维护性和扩展性的系统。这是一种结合实际情况的、务实的DDD实践方式。
+
+### 6.1 核心理念：业务逻辑向领域模型内聚
+1.  **充血的领域实体 (Rich Domain Entity)**：
+    *   领域实体不仅仅是数据的容器，更要封装属于自身的业务行为和规则。例如，一个 `Order` 实体应该有 `cancel()`、`confirmPayment()`、`addItem()` 等方法，这些方法直接修改订单自身的状态或数据。
+    *   **优先将业务逻辑放在最能体现其本质的领域实体中**。
+2.  **应用服务 (Application Service) 的职责**：
+    *   应用服务（通常是 `XxxServiceImpl` 或 `XxxAppServiceImpl`）是领域模型的直接客户。
+    *   **主要职责**：
+        *   **用例协调**：接收外部请求（如Controller的调用），加载相关的领域实体（通过Repository），调用实体的方法来执行业务逻辑。
+        *   **事务管理**：控制业务用例的事务边界。
+        *   **权限校验**：执行必要的安全检查。
+        *   **与外部系统交互**：如发送通知、调用其他微服务（通过防腐层）。
+        *   **DTO转换**：负责领域对象与DTO之间的转换，向外部屏蔽领域模型的复杂性。
+    *   **避免**：应用服务不应包含核心的、属于某个特定实体的业务规则判断或状态变更逻辑。这些应在实体内部。
+3.  **领域服务 (Domain Service)**：
+    *   当某项业务逻辑不适合放在任何一个单一的实体或值对象中时（例如，它需要协调多个实体，或者它代表了一个重要的领域过程），可以使用领域服务。
+    *   领域服务的方法通常接收领域对象作为参数。
+    *   例如，一个复杂的订单价格计算规则，如果涉及多种促销策略和用户等级，可以由 `OrderPricingDomainService` 来实现。
+4.  **仓库 (Repository)**：
+    *   负责领域对象的持久化和检索，提供一个类似集合的接口来操作聚合根（Aggregate Root）。
+    *   将领域模型与具体的持久化技术（如MyBatis, JPA）解耦。
+    *   Repository 的接口定义在领域层，其实现通常放在基础设施层（或DAO层）。
+    *   负责领域实体 (`XxxEntity`) 与数据持久化对象 (`XxxDO`) 之间的映射转换。
+
+### 6.2 变种DDD的特点与协调
+1.  **现有规范的继承与演进**：
+    *   本DDD实践是在现有 `@java-code-development-and-quality.mdc`、`@java-project-architecture-and-structure.mdc` 等规范基础上的增强，不是完全颠覆。
+    *   **命名规范**：在现有命名规则基础上，引入DDD特有的构件命名（如 `XxxEntity`, `XxxRepository`, `XxxDomainService`），并明确其在DDD分层架构中的角色。原有的 `XxxDO` 继续作为数据持久化对象，`XxxService` 可演进为应用服务 `XxxAppService`。
+    *   **分层架构**：DDD的分层架构（表示层、应用层、领域层、基础设施层）可以与现有的模块划分（web, biz, dao等）进行映射和对应。
+        *   `web` 模块通常对应表示层。
+        *   `biz` 模块可以包含应用层和部分领域层逻辑（特别是应用服务和领域服务接口）。
+        *   领域实体和值对象可以放在 `biz` 模块下的特定领域包中，或者一个独立的 `domain` 模块（如果项目复杂）。
+        *   `dao` 模块或一个独立的 `infrastructure` 模块可以包含Repository的实现和DO的定义。
+2.  **DO 与 Entity 的关系**：
+    *   `XxxDO` (Data Object)：贫血对象，与数据库表结构一一对应，由MyBatis-Plus管理，主要用于数据持久化。
+    *   `XxxEntity` (Domain Entity)：充血对象，包含业务逻辑和状态，是领域模型的核心。
+    *   `XxxRepository` 负责 `XxxEntity` 和 `XxxDO` 之间的转换。应用服务通过Repository获取 `XxxEntity`，操作实体后，再通过Repository持久化（通常会转换为DO）。
+3.  **事务管理**：
+    *   事务依然推荐使用 `@Transactional` 注解，通常标记在应用服务的方法上，确保一个完整的业务用例在一个事务中执行。
+4.  **代码组织**：
+    *   在 `biz` 模块（或独立的 `domain` 模块）中，按限界上下文（Bounded Context）或核心领域概念组织包结构。例如：
+        ```
+        com.hexonal.ht.biz.oms // 订单管理上下文
+          ├── domain
+          │   ├── model      // 实体、值对象
+          │   │   ├── order
+          │   │   │   ├── Order.java  (Entity - Aggregate Root)
+          │   │   │   ├── OrderItem.java (Entity)
+          │   │   │   ├── ShippingAddress.java (Value Object)
+          │   │   │   └── OrderStatus.java (Enum)
+          │   │   └── product
+          │   │       └── ProductSnapshot.java (Value Object or Entity representing product info at time of order)
+          │   ├── service    // 领域服务接口与实现
+          │   │   └── OrderPricingDomainService.java
+          │   └── repository // Repository接口
+          │       └── OrderRepository.java
+          ├── application    // 应用服务
+          │   ├── OrderAppService.java
+          │   ├── impl
+          │   │   └── OrderAppServiceImpl.java
+          │   └── dto
+          │       ├── CreateOrderReq.java
+          │       └── OrderDetailsResp.java
+          └── // ... 其他如定时任务、消息处理等
+        ```
+5.  **逐步演进**：
+    *   对于现有项目，不必追求一次性完全DDD改造。可以从核心领域、业务复杂性高的模块开始试点，逐步引入充血模型和DDD思想。
+    *   新项目或新模块则推荐从一开始就采用这种变种DDD架构。
+
+### 6.3 实践DDD的收益与考量
+1.  **收益**：
+    *   **更清晰的业务表达**：代码结构更贴近业务语言，降低沟通成本。
+    *   **更高的内聚性**：业务逻辑和其操作的数据被封装在一起，易于理解和修改。
+    *   **更低的耦合度**：通过明确的接口和分层，降低模块间的依赖。
+    *   **更好的可测试性**：领域实体和领域服务通常不依赖外部框架，易于进行单元测试。
+    *   **更强的可扩展性**：清晰的边界和内聚的模块使得系统更容易适应变化。
+2.  **考量**：
+    *   **学习曲线**：团队需要理解DDD的核心概念和思想。
+    *   **设计复杂度**：初期可能需要更多的时间进行领域建模和设计。
+    *   **过度设计风险**：对于简单的CRUD操作，不必强行套用所有DDD模式，应务实选择。的变种DDD允许在简单场景下仍可使用贫血模型和事务脚本模式。
+    *   **性能**：充血模型中实体方法调用可能涉及数据库操作，需关注性能，尤其是在Repository的实现和实体间关联加载策略上。
+
+### 6.4 与AI协作实践DDD
+*   **模型构建辅助**：可以向AI描述业务场景，要求其初步识别潜在的实体、值对象、聚合等，并讨论其合理性。
+*   **行为分配**：在设计实体方法时，可以与AI讨论某个业务逻辑应该属于哪个实体，或者是否需要一个领域服务。
+*   **代码生成**：在明确了实体及其行为后，可以要求AI生成符合充血模型特点的实体类骨架（包含字段和业务方法签名），并遵循本规范中的命名和注释约定。
+*   **Repository模式实现**：可以要求AI生成Repository接口及其基于MyBatis-Plus的实现骨架，包括Entity与DO的转换逻辑。
+*   **规范检查**：提供代码片段，询问AI是否符合充血模型原则或本规范中关于DDD的特定要求。
+
+---
+
+## 五、AI辅助编码与规范融合实践

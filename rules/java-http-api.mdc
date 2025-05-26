@@ -10,9 +10,9 @@ alwaysApply: true
 ## HTTP接口规范
 
 ### 【强制】接口URL格式
-1. 基本格式：`http://xxx.xxx.com/{大业务领域}/{版本|网络}/{子领域}/{模块}/{具体操作}`
-2. 版本号格式：v1, v2, v3等
-3. 网络类型：
+1. 基本格式：`http://xxx-develop.xxx.com/{大业务领域}/{版本或网络标识}/{子领域}/{模块}/{具体操作}` (例如: `/v1/` 或 `/app/`)
+2. 版本号格式：v1, v2, v3等 (用于路径中的版本标识)
+3. 网络类型 (用于路径中的网络标识，若与版本号同时使用，团队需统一路径组合方式，例如 `/v1/app/` 或约定只使用其一)：
    - app：移动端接口
    - web：Web端接口
    - mini：小程序接口
@@ -24,8 +24,8 @@ alwaysApply: true
 1.  **所有HTTP API接口必须统一使用POST方法。**
 2.  **操作意图区分**：
     *   业务操作的具体类型（如创建、查询、更新、删除、特定业务动作等）必须通过以下一种或组合方式在POST请求中明确：
-        *   **URL路径**：接口的URL路径应尽可能清晰地描述其操作的资源和意图。例如，`POST /user/create`，`POST /user/get-by-id`，`POST /order/update-status`。
-        *   **请求体参数**：可以在POST请求的JSON Body中包含一个明确的字段（如 `action` 或 `operationType`）来指定具体操作。例如：
+        *   **URL路径（推荐首选）**：接口的URL路径应尽可能清晰地描述其操作的资源和意图。例如，`POST /user/create`，`POST /user/get-by-id`，`POST /order/update-status`。
+        *   **请求体参数**：可以在POST请求的JSON Body中包含一个明确的字段（如 `action` 或 `operationType`）来指定具体操作。此方式应谨慎使用，主要用于同一资源有多个高度相关的次要操作，以避免URL路径过多。例如：
             ```json
             // POST /user/manage
             {
@@ -69,8 +69,8 @@ alwaysApply: true
 
 4. 查询接口 (POST)：
    ```
-   POST /ums/v1/employee/query                 // 主键查询 (参数在请求体中)
-   POST /ums/v1/employee/query-by-tel          // 手机号查询 (参数在请求体中)
+   POST /ums/v1/employee/get-by-id             // 主键查询 (参数在请求体中)
+   POST /ums/v1/employee/get-by-tel            // 手机号查询 (参数在请求体中)
    POST /ums/v1/employee/page-query            // 分页查询 (分页参数在请求体中)
    POST /ums/v1/employee/list-query            // 列表查询 (查询参数在请求体中)
    ```
@@ -80,18 +80,22 @@ alwaysApply: true
 2.  分页参数 (示例，作为JSON请求体的一部分):
     ```java
     // 请求对象示例: UserPageReq.java
-    // import com.hex.commons.base.BaseQueryReq; // 如果还适用
+    // import com.hexonal.commons.base.BaseQueryReq; // 如果还适用
 
     public class UserPageReq /* extends BaseQueryReq */ {
         @Min(1)
         private Integer pageNum = 1;    // 页码，从1开始
         
-        @Min(1) @Max(100)
+        @Min(1) @Max(100) // 建议最大值也通过配置管理
         private Integer pageSize = 10;  // 每页大小，默认10
         
         // ...其他查询条件字段...
         private String nameQuery;
         private Integer statusQuery;
+
+        // 【推荐】排序参数
+        private String sortBy;      // 排序字段 (例如：createdAt)
+        private String sortDirection; // 排序方向 (ASC 或 DESC)
     }
     ```
     请求体JSON示例:
@@ -100,7 +104,9 @@ alwaysApply: true
         "pageNum": 1,
         "pageSize": 20,
         "nameQuery": "张三",
-        "statusQuery": 1
+        "statusQuery": 1,
+        "sortBy": "createdAt",
+        "sortDirection": "DESC"
     }
     ```
 
@@ -124,44 +130,20 @@ alwaysApply: true
     // { "orderStatus": 1 }
     ```
 
-### 【新增强制】请求与响应头规范
-1.  **【强制】** 客户端发起请求时，对于包含JSON Body的POST请求，必须设置 `Content-Type: application/json; charset=UTF-8` 请求头。
-2.  **【强制】** 服务端响应JSON数据时，必须设置 `Content-Type: application/json; charset=UTF-8` 响应头。
-3.  **【推荐】** 客户端可以通过 `Accept: application/json` 请求头表明期望接收JSON格式的响应。
-
 ### 【强制】响应规范
-1.  分页响应统一使用 `com.hex.commons.page.PageResult` (或按 `@java-error-handling-and-operations.mdc` 中定义的统一 `Result` 结构内嵌分页信息)。所有响应数据，包括分页结果，都包装在统一的响应体内（参考 `@java-error-handling-and-operations.mdc` 的 `Result<T>` 结构）。
-2.  **【强制】HTTP状态码与业务响应码协同使用**：
-    *   所有API接口统一使用POST方法，但HTTP状态码仍应尽可能反映操作的通用HTTP语义：
-        *   **`200 OK`**: 表示服务器成功处理了请求。业务操作的最终成功与否（包括业务逻辑上的成功、部分成功或业务校验失败）通过响应体内的业务状态码 (`Result.code`) 和消息 (`Result.message`) 来进一步明确。
-        *   **`400 Bad Request`**: 表示客户端请求存在语法错误、参数无效（如格式错误、类型不匹配、必填项缺失，未通过JSR303校验等），导致服务器无法理解或处理该请求。响应体内应包含具体的错误信息和业务错误码。
-        *   **`401 Unauthorized`**: 表示请求需要用户认证，但客户端未提供认证信息或认证信息无效。
-        *   **`403 Forbidden`**: 表示服务器理解客户端的请求，但拒绝执行。通常因为用户虽已认证，但缺乏对目标资源的访问权限。
-        *   **`404 Not Found`**: 表示服务器无法根据请求URL找到对应资源或接口。注意与业务逻辑中"资源不存在"（如查询某个ID的数据为空）区分，后者业务上通常是成功的查询操作（HTTP 200），在响应体中表示数据为空或特定业务码。
-        *   **`429 Too Many Requests`**: 表示用户在给定时间内发送了过多请求（限流）。
-        *   **`500 Internal Server Error`**: 表示服务器在执行请求时发生了未预期的内部错误，导致无法完成请求。这是服务端问题的通用指示。
-        *   **`503 Service Unavailable`**: 表示服务器当前无法处理请求（例如，过载或正在维护）。通常是暂时状态。
-    *   具体业务成功或失败的细分，通过响应体 `Result` 中的业务 `code` (参考 `@java-error-handling-and-operations.mdc` 的错误码规范) 和 `message` 来承载。
-    *   日志记录：服务端应详细记录导致非 `200 OK` 响应的内部原因及请求信息。
-
-### 【推荐】API 安全
-1.  **认证 (Authentication)**：
-    *   **【强制】** 所有需要保护的API接口必须进行认证。根据项目实际情况选择合适的认证机制，如：
-        *   OAuth 2.0 / OpenID Connect: 适用于需要精细权限控制、第三方应用授权的场景。
-        *   Token-based (如 JWT - JSON Web Tokens): 适用于无状态服务，客户端在每次请求时通过HTTP头部（如 `Authorization: Bearer <token>`）携带Token。
-    *   **【强制】** Token必须设置合理的有效期，并提供刷新机制（如果适用）。
-    *   **【强制】** 敏感操作（如修改密码、重要配置变更）可能需要二次认证或更高安全级别的Token。
-2.  **授权 (Authorization)**：
-    *   **【强制】** 认证通过后，必须对用户的操作进行授权检查，确保用户拥有执行所请求操作的权限。可基于角色 (RBAC) 或更细粒度的权限进行控制。
-    *   **【推荐】** 遵循最小权限原则，仅授予用户完成其任务所必需的最小权限集。
-3.  **传输安全**：
-    *   **【强制】** 所有API接口必须使用HTTPS进行数据传输，确保通信过程的机密性和完整性。
-4.  **输入校验与输出编码**：
-    *   严格校验所有来自客户端的输入（参数、请求体），防止注入攻击（如SQL注入、XSS）。（参考 `@java-error-handling-and-operations.mdc` 的参数校验规范）
-    *   对输出到客户端的数据进行适当的编码，以防止XSS等问题，尤其是在将数据显示在HTML上下文中时。
-5.  **敏感数据处理**：
-    *   **【强制】** API响应中不应包含不必要的敏感数据。必须返回的敏感数据（如需脱敏展示）应遵循安全规范进行脱敏处理。
-    *   **【强制】** 不要在URL中传递敏感信息。
+1.  分页响应：**必须统一使用**在 `@java-error-handling-and-operations.mdc` 中定义的 `Result<T>` 结构。其中 `T` 为分页数据结构，例如 `PageData<ItemType>`，该 `PageData` 应包含列表 (`list`)、总记录数 (`totalCount` 或 `totalRecords`)、当前页码 (`pageNum`)、每页大小 (`pageSize`)。
+    ```java
+    // 示例 PageData 结构 (应在公共模块定义)
+    // public class PageData<T> {
+    //     private List<T> list;
+    //     private long totalRecords;
+    //     private int pageNum;
+    //     private int pageSize;
+    //     // 构造器、getter、setter
+    // }
+    // Result<PageData<UserPageResp>>
+    ```
+    所有响应数据，包括分页结果，都包装在统一的 `Result<T>` 响应体内。
 
 ### 【强制】接口文档规范 (所有请求均为POST)
 1.  Swagger (OpenAPI) 注解示例：
@@ -191,8 +173,15 @@ alwaysApply: true
 
 2.  必须包含以下内容：
     *   接口功能描述。
-    *   **POST请求体JSON结构详细说明**（包括所有参数的名称、类型、是否必填、含义、示例值）。
-    *   响应体JSON结构详细说明。
-    *   错误码说明 (参考 `@java-error-handling-and-operations.mdc`)。
-    *   完整的请求和响应示例JSON。
-    *   **【推荐】** API版本历史、详细的变更日志（包括新增、修改、废弃的接口和字段）、以及废弃接口的迁移指南和明确的废弃时间表（如有）。
+    *   **POST请求体JSON结构详细说明**（包括所有参数的名称、类型、是否必填、含义、示例值、校验规则如 JSR303 注解）。
+    *   响应体JSON结构详细说明（包括 `Result<T>` 包装结构和内部数据 `T` 的结构）。
+    *   错误码说明 (参考 `@java-error-handling-and-operations.mdc`，并列出本接口可能返回的具体业务错误码)。
+    *   完整的请求和响应示例JSON (覆盖成功和常见失败场景)。
+    *   **【推荐】**清晰说明接口的幂等性行为，以及（如果支持）客户端应如何传递幂等性令牌。
+    *   **【推荐】**对于废弃的接口或版本，使用 `@Deprecated` 注解，并在文档中明确说明废弃原因、替代接口及计划移除时间。
+
+---
+**附注：**
+*   所有API的实现必须严格遵守 `@java-error-handling-and-operations.mdc` 中定义的错误处理、日志记录和安全规范。
+*   对于需要保证幂等性的重要操作（特别是创建类操作，以防客户端重试导致重复创建），应考虑支持客户端传递幂等性令牌（例如，在请求头或请求体中包含 `X-Request-Id` 或 `Idempotency-Key`），服务端进行相应处理。
+*   批量操作的请求体和响应体结构应有明确规范，例如请求为一个JSON数组，响应体能区分各条记录的处理成功与失败详情。

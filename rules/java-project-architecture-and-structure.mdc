@@ -5,115 +5,147 @@ alwaysApply: true
 ---
 # Java项目架构与结构规范
 
-本规范旨在统一Java项目的架构设计、模块划分、代码结构、分支管理和版本控制等方面，以充分利用Java 21的新特性，提高项目的可维护性、可扩展性和团队协作效率。
+本规范旨在统一Java项目的架构设计、模块划分、代码结构、分支管理和版本控制等方面，以提高项目的可维护性、可扩展性和团队协作效率。项目的结构设计旨在支持清晰的关注点分离，并为实施领域驱动设计（DDD）提供基础。
 
 ## 一、基础框架要求
 
 ### 【强制】技术栈版本
-1. Java版本：21
-2. Spring Boot：3.2+ (支持Java 21)
-3. Dubbo：3.2+ (支持Java 21虚拟线程)
-4. Nacos：2.2.3+
-5. Apollo：2.1.0+
-6. Redis客户端：Lettuce 6.3+ (支持虚拟线程)
-7. MySQL：8.0+
-8. Elasticsearch：8.11+
-9. MongoDB：6.0+
-10. RocketMQ：5.1+
-11. XXL-JOB：2.4.0
-12. Maven：3.9.5+
-13. Resilience4j：2.1.0+ (支持虚拟线程)
-14. Log4j2：2.22.0+
+1. Java版本：1.8 (战略规划：考虑逐步迁移至新的LTS版本如Java 17，以利用新特性和性能改进)
+2. Spring Boot：2.x (战略规划：随Java版本升级，考虑迁移至Spring Boot 3.x)
+3. Dubbo：2.7.8
+4. Nacos：2.0
+5. Apollo：2.0.0
+6. Redis + Jedis：3.3
+7. MySQL：5.7+
+8. Elasticsearch：7.16
+9. MongoDB：最新稳定版
+10. RocketMQ：最新稳定版
+11. XXL-JOB：2.3.0
+12. Maven：3.6.3
+13. Resilience4j：最新稳定版
+14. Log4j2：最新稳定版
 
 ### 【强制】项目特性
 1. 所有项目必须是多模块项目
-2. 必须使用 Spring Boot 3.x Starter 进行项目初始化
-3. 必须使用 MyBatis-Plus 3.5.4+ 进行数据库操作
+2. 必须使用 Spring Boot Starter 进行项目初始化
+3. 必须使用 MyBatis-Plus 进行数据库操作
 4. 必须使用 Log4j2 进行日志记录
 5. 必须使用 Apollo 进行配置管理
-6. 必须利用Java 21虚拟线程优化I/O密集型操作：
-   - **适用场景**：优先用于执行大量并发的、主要时间消耗在等待外部资源（如网络请求、文件I/O、数据库查询、消息队列收发等）的任务。
-   - **实现方式**：通过 `Executors.newVirtualThreadPerTaskExecutor()` 创建执行器，或依赖框架（如Spring Boot 3.2+, Dubbo 3.2+, Lettuce 6.3+）对虚拟线程的内建支持。
-   - **注意事项**：避免在虚拟线程中执行长时间占用CPU的计算密集型任务。注意同步代码块（`synchronized`）可能导致平台线程被固定（pinned），应优先使用 `java.util.concurrent.locks.ReentrantLock`。
-7. 必须使用结构化并发API（Structured Concurrency, JEP 453）管理复杂的并发任务：
-   - **适用场景**：当一个任务分解为多个并发子任务，并且需要对这些子任务的生命周期（如全部成功、任一成功、超时、错误处理、取消）进行统一、可靠的管理时。例如，并行调用多个下游服务并聚合结果。
-   - **实现方式**：使用 `StructuredTaskScope` 及其派生类（如 `ShutdownOnFailure`, `ShutdownOnSuccess`）来编排并发子任务。
-   - **优势**：简化并发编程模型，提高代码可读性和可维护性，通过作用域来保证线程行为的原子性和资源清理的及时性，避免线程泄漏。
 
 ## 二、项目结构规范
 
 ### 【强制】模块划分
-1. api 模块：对外提供的接口和模型定义
-   - 包含接口定义
-   - 包含请求/响应对象
-   - 包含枚举定义
-2. api-impl 模块：接口实现
-   - 包含接口实现类
-   - 包含业务逻辑处理
-3. biz 模块：核心业务逻辑
-   - 包含业务处理类
-   - 包含领域模型
-   - 包含业务工具类
-4. common 模块：公共组件
-   - 包含工具类
-   - 包含常量定义
-   - 包含通用配置
-5. dao 模块：数据访问层
-   - 包含实体类
-   - 包含Mapper接口
-   - 包含XML映射文件
-6. integration 模块：外部集成
-   - 包含第三方接口调用
-   - 包含外部服务集成
-7. web 模块：Web层
-   - 包含Controller
-   - 包含拦截器
-   - 包含配置类
+
+项目应采用多模块Maven结构，以实现关注点分离和高内聚低耦合。以下模块是标准划分，旨在支持包括DDD在内的分层架构思想：
+
+1. **`xxx-api` 模块**：定义对外提供的服务契约，主要是RPC接口及其相关的请求/响应对象（DTOs）和枚举。
+   - 包含RPC服务接口 (例如 `UserRpcService`)
+   - 包含RPC请求对象 (`XxxRpcReq`) 和响应对象 (`XxxRpcResp`)
+   - 包含RPC层面的枚举定义 (如果这些枚举是API契约的一部分)
+   - **此模块应尽量轻薄，不包含业务逻辑实现。**
+
+2. **`xxx-api-impl` 模块**：RPC接口的实现层。在DDD语境下，此模块通常扮演应用服务（Application Service）的角色，负责编排领域逻辑，处理RPC请求。
+   - 包含RPC服务接口的实现类 (例如 `UserRpcServiceImpl`)
+   - 负责将RPC请求DTO转换为内部应用层或领域层所需的DTO/命令对象。
+   - 调用 `biz` 模块中的应用服务或领域服务来执行核心业务。
+   - 处理RPC层面的事务、安全、日志等横切关注点。
+   - **不应包含核心领域规则，核心领域规则在 `biz` (或 `domain`) 模块中。**
+
+3. **`xxx-biz` 模块**：核心业务逻辑层。此模块是DDD中领域模型（Domain Model）和应用服务（Application Services）的主要所在地。
+   - **应用服务 (Application Services)**: 例如 `OrderAppService`，`UserAppService`。它们编排领域对象（实体、值对象、领域服务）来完成具体的业务用例。它们是 `api-impl` 或 `web` 模块的直接调用目标。
+   - **领域模型 (Domain Model)**: 
+     - **领域实体 (Entities)**: 例如 `Order`, `Product`。包含业务状态和行为（充血模型）。
+     - **值对象 (Value Objects)**: 例如 `Address`, `Money`。
+     - **领域服务 (Domain Services)**: 例如 `OrderPricingDomainService`。封装不属于任何特定实体的领域逻辑。
+     - **仓库接口 (Repository Interfaces)**: 例如 `OrderRepository`。定义领域对象的持久化契约。
+     - **领域事件 (Domain Events)**: 例如 `OrderPaidEvent`。
+   - 业务相关的DTOs (Data Transfer Objects，用于应用服务内部或与领域层交互)。
+   - 定时任务 (`job`)、消息处理 (`ons.consumer`, `ons.producer`) 等业务相关组件。
+
+4. **`xxx-dao` 模块 (或 `xxx-infrastructure` 模块)**：数据访问层和基础设施实现。**此模块是DDD中的基础设施层（Infrastructure Layer）。**
+   - **数据持久化对象 (DO - Data Objects)**: 例如 `UserDO`, `OrderDO`。与数据库表结构一一对应。
+   - **MyBatis Mapper接口和XML映射文件**。
+   - **仓库实现 (Repository Implementations)**: 例如 `OrderRepositoryImpl`。实现定义在 `biz` (或 `domain`) 模块中的仓库接口，负责DO与领域实体之间的转换和实际的数据库操作。
+   - 基础设施相关的其他实现，如消息队列的生产者/消费者具体实现（如果不想放在biz），缓存服务的具体实现等。
+
+5. **`xxx-web` 模块**：处理HTTP请求的Web层，对外暴露HTTP API。
+   - 包含Controller类，处理HTTP请求，调用 `biz` 模块中的应用服务。
+   - 包含Web层请求对象 (`XxxReq`) 和响应对象 (`XxxResp`)，以及必要的DTO转换。
+   - 包含Spring MVC拦截器 (`interceptor`)、Web相关配置 (`config`)。
+
+6. **`xxx-common` 模块**：项目内通用的组件和工具类。
+   - 通用工具类 (`utils`)。
+   - 应用范围的常量定义 (`constants`)。
+   - 应用范围的、非领域特定的枚举定义 (`enums`)。
+   - 通用异常基类 (`exception`) (若 `com.hexonal.ht.common` 无法满足)。
+   - 通用配置类 (如果适用)。
+
+7. **`xxx-integration` 模块**：用于集成外部第三方服务或系统。
+   - 包含调用外部HTTP API、RPC服务或其他第三方SDK的客户端代码。
+   - 在DDD中，这部分常作为防腐层（Anti-Corruption Layer, ACL）的一部分，将外部模型的变动与核心领域隔离开。
+   - 接口通常定义在 `biz` (应用层或领域层)，实现放在此模块。
+
+*(【DDD增强】对于大型复杂项目，可以考虑将核心领域模型 (`Entities`, `Value Objects`, `Domain Service interfaces`, `Repository interfaces`, `Domain Events`) 提取到独立的 `xxx-domain` 模块，使其不依赖任何基础设施或应用层代码，实现更纯粹的领域隔离。此时，`xxx-biz` 模块将主要包含应用服务和领域服务的实现。)*
 
 ### 【强制】包结构规范
-1. 基础包名：com.hex
-2. 模块包名：
+1. 基础包名前缀：com.hexonal (或 com.yp)
+2. 模块包名 (以项目代码为 `myproject`，业务模块为 `order` 为例):
    ```
-   com.hex.api          // API定义
-     ├── {模块}.service      // RPC服务接口
-     ├── {模块}.request      // 请求对象
-     └── {模块}.response     // 响应对象
+   com.hexonal.myproject.api          // API定义 (RPC)
+     ├── rpc.order.service      // RPC服务接口 (e.g., com.hexonal.myproject.api.rpc.order.service.OrderRpcService)
+     ├── rpc.order.request      // RPC请求对象
+     └── rpc.order.response     // RPC响应对象
+     └── rpc.order.enums        // RPC API相关的枚举
+   
+   com.hexonal.myproject.api.impl     // API实现 (RPC)
+     └── rpc.order.service.impl // RPC服务实现 (e.g., com.hexonal.myproject.api.impl.rpc.order.service.impl.OrderRpcServiceImpl)
+   
+   com.hexonal.myproject.biz          // 业务逻辑核心
+     ├── app.order.service      // 应用服务接口 (e.g., com.hexonal.myproject.biz.app.order.service.OrderAppService)
+     ├── app.order.service.impl // 应用服务实现
+     ├── app.order.dto          // 应用服务使用的数据传输对象 (请求/响应)
+     ├── domain.order.model     // 领域模型: Entities, Value Objects, Domain Events (e.g., com.hexonal.myproject.biz.domain.order.model.Order)
+     ├── domain.order.service   // 领域服务接口与实现 (e.g., com.hexonal.myproject.biz.domain.order.service.OrderPricingDomainService)
+     ├── domain.order.repository// 仓库接口 (e.g., com.hexonal.myproject.biz.domain.order.repository.OrderRepository)
+     ├── job.order            // 定时任务
+     ├── mq.order.consumer    // 消息消费者
+     ├── mq.order.producer    // 消息生产者
+     └── // ... 其他业务组件 (如 specific utils for this biz module)
+   
+   com.hexonal.myproject.dao          // 数据访问与基础设施 (或者叫 .infrastructure)
+     ├── persistent.order.po        // 持久化对象 (DO/PO) (e.g., com.hexonal.myproject.dao.persistent.order.po.OrderPO)
+     ├── persistent.order.mapper    // MyBatis Mapper接口
+     ├── repository.order.impl  // 仓库实现 (e.g., com.hexonal.myproject.dao.repository.order.impl.OrderRepositoryImpl)
+     └── // ... 其他基础设施实现 (如缓存客户端封装)
 
-   com.hex.api.impl     // API实现
-     └── {模块}.service.impl // RPC服务实现
+   // 若使用独立的 xxx-domain 模块 (此处 xxx 即 myproject):
+   // com.hexonal.myproject.domain       // 纯领域模型模块
+   //   └── order.model
+   //   └── order.service (接口)
+   //   └── order.repository (接口)
+   //   └── order.event
 
-   com.hex.biz          // 业务逻辑
-     ├── {模块}.service      // 业务服务
-     ├── {模块}.dto         // 数据传输对象
-     ├── {模块}.job         // 定时任务
-     ├── {模块}.ons.consumer // 消息消费者
-     ├── {模块}.ons.producer // 消息生产者
-     └── {模块}.ons.service  // 消息服务
-
-   com.hex.dao          // 数据访问
-     ├── {模块}.entity      // 实体类
-     ├── {模块}.mapper      // MyBatis接口
-     ├── {模块}.dao        // 数据访问对象
-     └── {模块}.bo         // 业务对象
-
-   com.hex.integration  // 外部集成
-     ├── {模块}.service     // 集成服务
-     ├── {模块}.request     // 请求对象
-     └── {模块}.response    // 响应对象
-
-   com.hex.common       // 公共组件
-     ├── constants          // 常量定义
-     ├── enums             // 枚举定义
-     ├── utils             // 工具类
-     └── exception         // 异常类
-
-   com.hex.web          // Web层
-     ├── {模块}.controller  // 控制器
-     ├── {模块}.request     // 请求对象
-     ├── {模块}.response    // 响应对象
-     ├── interceptor       // 拦截器
-     └── config            // 配置类
+   com.hexonal.myproject.integration  // 外部集成
+     ├── acl.order.{外部系统}.adapter // 防腐层适配器
+     ├── acl.order.{外部系统}.dto     // 外部系统DTO
+     └── client.order.{外部系统}    // 外部服务客户端
+   
+   com.hexonal.myproject.common       // 项目级公共组件 (区别于集团级common)
+     ├── constants          
+     ├── enums             // 非领域相关的通用枚举
+     ├── util              // 通用工具类 (注意避免成为垃圾桶)
+     └── exception         // 项目级通用异常
+   
+   com.hexonal.myproject.web          // Web层 (HTTP API)
+     ├── rest.order.controller  // REST Controller (e.g., com.hexonal.myproject.web.rest.order.controller.OrderController)
+     ├── rest.order.request     // Web请求对象
+     ├── rest.order.response    // Web响应对象 (通常是 Result<SpecificResp>)
+     ├── interceptor       
+     └── config            
+   
+   // 启动类 Application.java 通常放在顶层基础包下，例如 com.hexonal.myproject
    ```
+   *注：`com.hexonal` (或 `com.yp`) 为公司/集团顶级包名。示例中的 `myproject` 代表项目的核心标识，通常对应于父POM中 `groupId` 的最后一部分（例如，若父POM `groupId` 为 `com.hexonal.oms`，则 `myproject` 在包结构中对应 `oms`）。此项目核心标识应根据实际项目定名（如 `oms`, `ums`, `ht` 等）。示例中的 `order` 代表具体的业务模块，应替换为实际的模块名（如 `user`, `product` 等）。*
 
 ### 【强制】资源文件规范
 1. 配置文件位置：
@@ -178,7 +210,7 @@ alwaysApply: true
 2. 测试阶段：
    - 完整回归测试
    - 修复发现的问题
-   - 更新文档
+   - 更新文档 (包括API文档、用户手册、CHANGELOG等)
 3. 发布阶段：
    - 合并到master
    - 打tag
@@ -203,61 +235,13 @@ alwaysApply: true
 
 ### 【强制】依赖管理规范
 1. 版本管理
-   - 统一在父POM中定义版本
-   - 禁止在子模块中指定版本
-   - 必须使用版本管理插件
-   - 定期更新依赖版本
-   - **【推荐】** 积极使用BOM (Bill of Materials) 文件管理相关依赖集合的版本。例如，`spring-boot-dependencies` BOM，以及为项目内部一组模块定义的BOM。这有助于统一版本、简化依赖声明并减少版本冲突。
+   - 统一在父POM中定义版本 (在 `<dependencyManagement>` 和 `<pluginManagement>` 中)
+   - 禁止在子模块中直接指定版本 (应继承父POM定义的版本)
+   - 必须使用版本管理插件 (例如 `versions-maven-plugin` 辅助版本更新检查，`maven-enforcer-plugin` 检查依赖收敛和规范)
+   - 定期更新依赖版本 (关注安全漏洞和重要修复)
 2. 依赖原则
    - 避免依赖冲突
    - 避免循环依赖
    - 避免过度依赖
    - 及时清理无用依赖
-
-## 四、构建与交付规范
-
-### 【推荐】构建与CI/CD质量门禁
-*   **自动化构建**：使用Maven或Gradle进行标准化、可重复的自动化构建。
-*   **持续集成 (CI)**：
-    *   代码提交后自动触发构建、单元测试和集成测试。
-    *   集成静态代码分析工具（如SonarQube, Checkstyle, PMD）进行代码质量扫描，设定质量门禁（如Bugs数量、漏洞、代码异味、测试覆盖率阈值）。
-    *   集成安全扫描工具（如依赖漏洞扫描、SAST工具）。
-*   **测试覆盖率**：设定明确的单元测试和集成测试覆盖率目标（如行覆盖率、分支覆盖率），并作为CI流程中的质量门禁。
-*   **制品管理**：构建产生的制品（如JAR包、Docker镜像）应存储在制品仓库（如Nexus, Artifactory, Harbor）中，并进行版本化管理。
-*   **持续交付/部署 (CD)**：
-    *   实现从代码提交到生产（或预生产）环境的自动化或半自动化部署流程。
-    *   采用蓝绿部署、金丝雀发布等策略降低部署风险。
-    *   部署过程应包含健康检查和快速回滚机制。
-
-### 【推荐】配置管理 (Apollo) 使用细则
-*   **Namespace规划**：
-    *   应用自有配置 ( `application` )：存放应用自身的配置项，如数据库连接、线程池大小等。此Namespace对应用私有。
-    *   公共配置：对于多个应用共享的配置（如通用错误码、中间件地址、特性开关等），应创建专门的公共Namespace（如 `common.utils`, `middleware.config`）。应用按需关联这些公共Namespace。
-    *   命名规范：Namespace名称应清晰表意，如 `项目名.模块名` 或 `业务领域.配置类型`。
-*   **配置项命名**：
-    *   采用与Spring Boot类似的层级化命名方式，如 `spring.datasource.url`, `custom.feature.switchA`。
-    *   保持一致性，使用小写字母和点 (`.`) 分隔。
-*   **敏感配置处理**：
-    *   **【强制】** 密码、密钥等极敏感信息不应明文存储在Apollo中。应考虑使用Apollo的加密功能，或结合外部加密服务/环境变量注入等方式处理。
-    *   对于一般敏感信息，可利用Apollo的权限控制，限制其访问和修改权限。
-*   **配置发布与回滚**：
-    *   遵循灰度发布原则：先在预发/测试环境验证配置变更，再逐步推向生产环境。
-    *   利用Apollo的版本和发布历史功能，确保配置变更可追溯，并在必要时能够快速回滚到先前版本。
-    *   配置变更时，应有相应的变更说明和审批流程。
-*   **监听与动态刷新**：
-    *   对于需要动态刷新的配置项（如通过 `@ConfigurationProperties` 或 `@Value` 注入的），确保应用正确配置了Apollo的动态刷新机制。
-    *   注意动态刷新可能带来的影响，如连接池重建、缓存失效等，应在设计时予以考虑。
-
-### 【推荐】架构层面的安全性设计原则
-*   **默认安全 (Secure by Default)**：系统设计应默认开启安全配置，需要显式操作才能降低安全级别。避免不安全的默认设置。
-*   **最小权限原则 (Principle of Least Privilege)**：无论是用户账户、服务账户还是系统组件，都只授予其完成任务所必需的最小权限集。
-*   **纵深防御 (Defense in Depth)**：不依赖单一安全措施。通过多层、多样化的安全控制（如网络防火墙、WAF、主机安全、应用层安全、数据加密等）构建防护体系。
-*   **输入校验与输出编码**：
-    *   严格校验所有不可信来源的输入（包括用户输入、API请求、第三方系统数据），防止注入、溢出等攻击。（参见 `@java-http-api.mdc` 和 `@java-error-handling-and-operations.mdc`）
-    *   对输出到不同上下文（如HTML页面、日志、数据库查询）的数据进行恰当的编码或转义，防止XSS、日志注入等问题。
-*   **依赖安全管理**：
-    *   定期扫描项目依赖，及时发现并修复已知的安全漏洞（CVEs）。使用工具（如OWASP Dependency-Check, Snyk）辅助检查。
-    *   仅从可信来源获取依赖，并验证其完整性。
-*   **认证与授权强化**：确保所有接口和资源访问都有强认证和细粒度授权机制。（参见 `@java-http-api.mdc`）
-*   **敏感数据保护**：对静态存储和传输过程中的敏感数据（如个人信息、支付信息、密钥）进行加密保护。实施恰当的密钥管理策略。
-*   **安全审计与日志**：记录关键安全事件（如登录尝试、权限变更、重要操作），并对安全日志进行监控和分析，以便及时发现和响应安全事件。（参见 `@java-error-handling-and-operations.mdc`）
+   - **【推荐】**使用 `mvn dependency:tree` 和 IDE 工具分析并优化依赖树，确保依赖的简洁和无冲突。
