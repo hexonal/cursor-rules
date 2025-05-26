@@ -1,0 +1,285 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# .NET 项目数据持久化规范
+
+本规则基于行业最佳实践和现有项目规范，专注于数据库设计、SQL开发和ORM（主要是Entity Framework Core）使用等方面的最佳实践，适配 .NET 8 for Windows 环境。
+
+## 一、表结构规范
+
+### 【强制】基础字段
+每个表必须包含以下基本字段 (根据实际ORM和数据库类型调整数据类型，以下为通用SQL Server/PostgreSQL建议)：
+
+| 字段名        | 字段含义     | 字段类型 (SQL Server) | 字段类型 (PostgreSQL) | 默认值 (SQL)        | 备注                                                                 |
+|---------------|--------------|-----------------------|-----------------------|---------------------|----------------------------------------------------------------------|
+| Id            | 数据库主键   | bigint / int          | bigserial / serial    | (自动递增)        | EF Core默认约定`Id`或`{ClassName}Id`为主键，bigint/bigserial适用于大量数据 |
+| CreatedAtUtc  | 记录创建时间 | datetime2(7)          | timestamp with time zone | GETUTCDATE() / statement_timestamp() | 创建后不允许修改，存储UTC时间                                            |
+| CreatedBy     | 记录创建人   | nvarchar(100)         | varchar(100)          | ''                  | 创建后不允许修改；长度根据业务调整                                       |
+| UpdatedAtUtc  | 记录更新时间 | datetime2(7)          | timestamp with time zone | GETUTCDATE() / statement_timestamp() | 每次业务修改时更新，存储UTC时间                                          |
+| UpdatedBy     | 记录更新操作人 | nvarchar(100)         | varchar(100)          | ''                  | 每次业务修改时更新；长度根据业务调整                                       |
+| IsDeleted     | 逻辑删除     | bit                   | boolean               | 0 / false           | 0/false: 未删除, 1/true: 已删除。查询时通常应附带 `WHERE IsDeleted = 0` 条件 |
+| RowVersion    | 行版本控制   | rowversion / bytea    | bytea / timestamp     |                     | 用于EF Core乐观并发控制 (SQL Server `rowversion` / `timestamp` (已弃用的rowversion同义词) 或 PostgreSQL `xmin` 系统列 (间接) 或手动的时间戳/guid)  |
+
+示例建表语句 (SQL Server):
+```sql
+CREATE TABLE Xxx (
+    Id bigint IDENTITY(1,1) NOT NULL,       -- 主键，自增
+    Name nvarchar(256) NOT NULL,            -- 业务字段示例：名称
+    -- 业务字段
+    CreatedAtUtc datetime2(7) NOT NULL DEFAULT (GETUTCDATE()), -- 创建时间 (UTC)
+    CreatedBy nvarchar(100) NOT NULL DEFAULT '',               -- 创建人
+    UpdatedAtUtc datetime2(7) NOT NULL DEFAULT (GETUTCDATE()), -- 更新时间 (UTC)
+    UpdatedBy nvarchar(100) NOT NULL DEFAULT '',               -- 更新人
+    IsDeleted bit NOT NULL DEFAULT (0),                       -- 逻辑删除标志
+    RowVersion rowversion NOT NULL,                           -- 行版本，用于乐观并发
+    CONSTRAINT PK_Xxx PRIMARY KEY (Id)                        -- 主键约束
+);
+```
+
+示例建表语句 (PostgreSQL):
+```sql
+CREATE TABLE Xxx (
+    Id bigserial NOT NULL,                  -- 主键，自增
+    Name varchar(256) NOT NULL,             -- 业务字段示例：名称
+    -- 业务字段
+    CreatedAtUtc timestamp with time zone NOT NULL DEFAULT (statement_timestamp()), -- 创建时间 (带时区)
+    CreatedBy varchar(100) NOT NULL DEFAULT '',               -- 创建人
+    UpdatedAtUtc timestamp with time zone NOT NULL DEFAULT (statement_timestamp()), -- 更新时间 (带时区)
+    UpdatedBy varchar(100) NOT NULL DEFAULT '',               -- 更新人
+    IsDeleted boolean NOT NULL DEFAULT false,                 -- 逻辑删除标志
+    -- RowVersion 可以通过触发器手动管理，或者使用 xmin 进行系统级跟踪
+    -- 手动 RowVersion 示例 (例如，使用由触发器更新的 Guid 或 Timestamp):
+    -- RowVersion uuid NOT NULL DEFAULT gen_random_uuid(),
+    CONSTRAINT PK_Xxx PRIMARY KEY (Id)                        -- 主键约束
+);
+```
+*EF Core `DbContext` 中可通过 `modelBuilder` 配置这些字段的默认值、并发标记等。*
+
+### 【强制】索引命名规范 (SQL Server/PostgreSQL 通用风格)
+
+| 索引类型 | 命名规则                   | 示例                                                                     |
+|----------|----------------------------|--------------------------------------------------------------------------|
+| 普通索引 | IX_{TableName}_{ColumnNames} | 在Xxx表的ImGroupId字段加普通索引，索引名称为：IX_Xxx_ImGroupId          |
+| 唯一索引 | UK_{TableName}_{ColumnNames} | 在Xxx表的OrderId字段加唯一索引，索引名称为：UK_Xxx_OrderId             |
+| 联合索引 | IX_{TableName}_{ColsJoined}  | 在Xxx表的PromoteTime, StartTime, IsDeleted三字段加联合索引: IX_Xxx_PromoteTime_StartTime_IsDeleted |
+*EF Core 中可通过 Fluent API (`HasIndex`, `IsUnique`) 或 Data Annotations (`[Index]`) 定义索引。*
+
+### 【强制】字段设计规范
+1. 非负数类型选择应基于其最大值 (例如 `int`, `long` for .NET, `INT`, `BIGINT` for SQL)。.NET中没有直接的 `unsigned` 类型映射到所有数据库，行为依赖于DB提供程序。
+2. **必须使用 `bit` (SQL Server) 或 `boolean` (PostgreSQL) 存储布尔值 (true/1, false/0)。**
+3. **金额必须使用 `decimal` 或 `numeric` SQL类型 (对应.NET的 `decimal`)，禁止使用 `float` 和 `double` (SQL `real`, `float`)。**
+4. 字符串长度不固定的用 `nvarchar(length)` / `varchar(length)`，固定长度的用 `nchar(length)` / `char(length)` (通常 `varchar` 更常用)。长度应按需设定，避免过长如 `nvarchar(MAX)` 除非确实需要。
+5. 字段必须有明确的业务含义 (通过XML文档注释或EF Core的`Comment`注解属性)。
+6. 数据库和表必须指定合适的字符集和排序规则 (Collation)，例如 `SQL_Latin1_General_CP1_CI_AS` 或 `UTF8` 相关的。
+7. **【推荐】**对于业务上表示枚举的字段，推荐使用 `int` 或 `smallint` (SQL) 存储，并在.NET代码中通过枚举类型进行映射。EF Core 支持枚举到数值或字符串的转换。
+
+### 【强制】索引设计规范
+1. 每个表必须有主键，推荐使用 `bigint`/`int` 自增 (SQL `IDENTITY` / `SERIAL`) 或 `Guid` (如果需要分布式唯一性)。
+2. 常用查询字段 (`WHERE` 子句、`JOIN` 条件、`ORDER BY` 子句) 必须建立索引。
+3. 更新频繁且选择性不高的字段不建议单独建立索引，可能会影响写性能。
+4. 索引个数通常建议不超过5-7个，过多索引会影响写性能和存储。
+5. 联合索引需要考虑最左前缀原则 (SQL引擎利用方式) 和字段顺序 (选择性高的字段在前)。
+6. **【推荐】**对于包含逻辑删除字段（如 `IsDeleted`）的表，常用查询应是过滤后的 (`WHERE IsDeleted = 0`)。考虑在常用查询条件的联合索引中包含该字段，例如 `IX_SomeTable_SomeField_IsDeleted (SomeField) WHERE IsDeleted = 0` (SQL Server filtered index) 或将 `IsDeleted` 作为联合索引的普通一部分。
+7. **【推荐】**索引设计应参考Repository层定义的数据访问模式，确保为领域对象的常见查询路径提供高效索引支持。
+
+## 二、Entity Framework Core (EF Core) 使用规范
+
+### 【强制】DbContext 规范
+1. 必须在基础设施层 (e.g., `SolutionName.Infrastructure`) 定义 `DbContext`。
+2. `DbContext` 类名应以 `Context` 结尾 (e.g., `ApplicationDbContext`)。
+3. 实体 (`DbSet<TEntity>`) 属性名应为实体类的复数形式 (e.g., `public DbSet<User> Users { get; set; }`)。
+4. 在 `OnModelCreating(ModelBuilder modelBuilder)` 方法中进行 Fluent API 配置，而不是主要依赖 Data Annotations，以保持POCO类的整洁。
+   ```csharp
+   public class ApplicationDbContext : DbContext
+   {
+       public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
+           : base(options) { }
+
+       public DbSet<Product> Products { get; set; }
+       public DbSet<Order> Orders { get; set; }
+
+       protected override void OnModelCreating(ModelBuilder modelBuilder)
+       {
+           base.OnModelCreating(modelBuilder);
+           // 从当前程序集应用所有实现了 IEntityTypeConfiguration<TEntity> 的配置类
+           modelBuilder.ApplyConfigurationsFromAssembly(Assembly.GetExecutingAssembly());
+
+           // 直接配置示例 (替代单独配置类的方式):
+           // modelBuilder.Entity<Product>(entity =>
+           // {
+           //     entity.ToTable("Products"); // 设置表名
+           //     entity.HasKey(p => p.Id);    // 设置主键
+           //     entity.Property(p => p.Name).IsRequired().HasMaxLength(200); // 设置Name属性：必需，最大长度200
+           //     entity.Property(p => p.Price).HasColumnType("decimal(18,2)"); // 设置Price属性的数据库列类型
+           //     entity.HasIndex(p => p.Sku).IsUnique(); // 为Sku创建唯一索引
+           // });
+       }
+   }
+   ```
+5. **【推荐】**为每个实体创建一个单独的配置类实现 `IEntityTypeConfiguration<TEntity>`，并在 `OnModelCreating` 中通过 `modelBuilder.ApplyConfigurationsFromAssembly()` 应用它们。
+   ```csharp
+   // 位于 Infrastructure/Persistence/Configurations/ProductConfiguration.cs
+   public class ProductConfiguration : IEntityTypeConfiguration<Product>
+   {
+       public void Configure(EntityTypeBuilder<Product> builder)
+       {
+           builder.ToTable("Products");             // 表名
+           builder.HasKey(p => p.Id);                 // 主键
+           builder.Property(p => p.Name).IsRequired().HasMaxLength(200); // Name属性
+           // ... 其他配置
+       }
+   }
+   ```
+
+### 【强制】实体类 (POCO) 规范
+1. POCO类应定义在领域层 (`SolutionName.Domain`) 或基础设施层 (`SolutionName.Infrastructure`)，取决于是否将它们也用作领域实体。如果POCO仅为EF Core持久化服务，且领域实体是独立的类，则POCO在基础设施层。
+2. 属性应使用自动属性 (`public string Name { get; set; }`)。
+3. 导航属性 (`virtual` 关键字可选，用于支持EF Core的懒加载代理，但推荐显式加载 `Include`/`ThenInclude` 以避免N+1问题)。
+   ```csharp
+   public class Order
+   {
+       public int Id { get; set; }
+       public DateTime OrderDate { get; set; }
+       public decimal TotalAmount { get; set; }
+       public int CustomerId { get; set; }
+
+       // 指向 Customer 的导航属性 (如果期望懒加载，则设为 virtual)
+       // public virtual Customer Customer { get; set; }
+       public Customer Customer { get; set; } // 用于显式加载
+
+       // 指向 OrderItems 的导航属性 (集合)
+       // public virtual ICollection<OrderItem> OrderItems { get; set; } = new HashSet<OrderItem>();
+       public ICollection<OrderItem> OrderItems { get; set; } = new HashSet<OrderItem>(); // 用于显式加载
+   }
+   ```
+4. 避免在POCO中包含复杂的业务逻辑，这些逻辑应在领域实体中 (如果分离) 或领域服务/应用服务中。
+
+### 【强制】LINQ 查询规范 (EF Core)
+1. **禁止在 `Select()` 投影之前对整个实体集合调用 `.ToList()` 或 `.ToArray()` 然后再进行筛选或映射 (除非数据量极小且明确知道原因)。** 这会导致将所有数据加载到内存中。
+   ```csharp
+   // 错误 - 先将所有用户加载到内存
+   // var activeUserNames = _context.Users.ToList().Where(u => u.IsActive).Select(u => u.UserName);
+
+   // 正确 - 筛选和投影在数据库端执行
+   var activeUserNames = await _context.Users
+       .Where(u => u.IsActive)
+       .Select(u => u.UserName)
+       .ToListAsync();
+   ```
+2. **使用异步方法** (e.g., `ToListAsync()`, `FirstOrDefaultAsync()`, `SaveChangesAsync()`) 进行数据库操作，以避免阻塞线程。
+   ```csharp
+   public async Task<User> GetUserAsync(int id)
+   {
+       return await _context.Users.FirstOrDefaultAsync(u => u.Id == id); // 异步获取第一个匹配项或默认值
+   }
+   ```
+3. **显式加载关联数据**：优先使用 `Include()` 和 `ThenInclude()` 来显式加载需要的关联数据，以避免N+1查询问题。避免过度使用懒加载。
+   ```csharp
+   var orderWithDetails = await _context.Orders
+       .Include(o => o.Customer) // 加载关联的 Customer
+       .Include(o => o.OrderItems) // 加载关联的 OrderItems 集合
+           .ThenInclude(oi => oi.Product) // 然后，为每个 OrderItem 加载其 Product
+       .FirstOrDefaultAsync(o => o.Id == orderId);
+   ```
+4. **使用投影 (`Select`)** 将查询结果映射到DTO或匿名类型，只选择需要的字段，减少数据传输量。
+   ```csharp
+   var userDtos = await _context.Users
+       .Where(u => u.IsActive)
+       .Select(u => new UserSummaryDto
+       {
+           Id = u.Id,
+           FullName = u.FirstName + " " + u.LastName,
+           Email = u.Email
+       })
+       .ToListAsync();
+   ```
+5. **谨慎使用客户端评估**：EF Core 可能会在无法将LINQ表达式转换为SQL时执行客户端评估。这可能导致性能问题。检查日志中的警告 (EF Core 3.x+ 默认会抛出异常)。尽可能确保所有逻辑都在服务器端执行。
+6. **对于复杂或性能敏感的查询，考虑使用原生SQL查询 (`FromSqlRaw`, `ExecuteSqlRawAsync`) 或 Dapper。** 但优先尝试优化LINQ查询。
+   ```csharp
+   // var blogs = await _context.Blogs.FromSqlRaw("SELECT * FROM Blogs WHERE Name = {0}", blogName).ToListAsync(); // 使用参数化查询防止SQL注入
+   ```
+7. **分页查询**：必须使用 `.Skip()` 和 `.Take()` 实现高效分页。不要加载所有数据到内存再分页。
+   ```csharp
+   public async Task<List<ProductDto>> GetProductsPageAsync(int pageNumber, int pageSize)
+   {
+       return await _context.Products
+           .OrderBy(p => p.Name) // 为保证分页一致性，通常需要排序
+           .Skip((pageNumber - 1) * pageSize)
+           .Take(pageSize)
+           .Select(p => new ProductDto { /* ... DTO属性映射 ... */ })
+           .ToListAsync();
+   }
+   ```
+8. **【推荐】** 复杂查询逻辑可以封装在Repository的专门方法中，或使用规约模式 (Specification Pattern)。
+
+## 三、性能优化规范 (EF Core & General SQL)
+
+### 【强制】查询优化
+1. **必须有过滤条件 (`Where` 子句)**，除非确实需要全表数据 (罕见)。
+2. **数据量大时必须限制查询记录数** (使用 `.Take()` 或分页)。
+3. **禁止 `SELECT *` (隐式或显式)**：通过 `Select()` 投影只获取必要的列。
+4. **分页必须使用数据库端分页** (`.Skip().Take()`)。
+5. **大数据量查询必须使用分页**，并考虑流式处理或批处理，避免一次性加载过多数据到内存。
+6. **【推荐】**针对高频查询考虑使用覆盖索引（Covering Index）以减少对表的访问。EF Core 查询应尽可能设计为能利用这些索引。
+7. **【推荐】**使用编译查询 (`EF.CompileAsyncQuery`) 对于重复执行且结构相同的复杂查询可以提高性能，但会增加启动时间和复杂性，需权衡。
+8. **【推荐】**对于只读操作，使用 `.AsNoTracking()` 可以提高性能，因为它避免了EF Core跟踪实体状态的开销。
+    ```csharp
+    var products = await _context.Products.AsNoTracking().Where(p => p.IsActive).ToListAsync(); // 不跟踪实体变化
+    ```
+
+### 【强制】更新优化
+1. **更新和删除操作必须带有 `WHERE` 条件**，避免意外的全表操作。
+2. **禁止无 `WHERE` 条件的全表 `UPDATE` 或 `DELETE` 语句 (EF Core `ExecuteUpdateAsync`/`ExecuteDeleteAsync` (EF Core 7+) 也需注意过滤条件)。**
+3. **必须使用乐观并发控制**，防止数据覆盖。EF Core 支持通过 `[Timestamp]` attribute (SQL Server `rowversion`) 或 `IsRowVersion()` Fluent API，或手动检查属性值来实现。
+   ```csharp
+   // 带有 RowVersion 的 POCO
+   public class MyEntity
+   {
+       public int Id { get; set; }
+       public string Name { get; set; }
+       public byte[] RowVersion { get; set; } // 对于 SQL Server: 标记为 [Timestamp]
+   }
+
+   // 在 DbContext OnModelCreating 或实体配置类中:
+   // modelBuilder.Entity<MyEntity>().Property(e => e.RowVersion).IsRowVersion();
+
+   // 更新逻辑示例:
+   // var entity = await _context.Set<MyEntity>().FindAsync(id);
+   // if (entity == null) { /* 处理未找到的情况 */ }
+   // _context.Entry(entity).Property(e => e.RowVersion).OriginalValue = requestDto.RowVersion; // 设置原始 RowVersion 用于并发检查
+   // entity.Name = requestDto.Name;
+   // try {
+   //     await _context.SaveChangesAsync();
+   // } catch (DbUpdateConcurrencyException ex) {
+   //     // 处理并发冲突，例如提示用户数据已被修改
+   // }
+   ```
+4. **批量更新/删除**：
+    - EF Core 7+ 提供了 `ExecuteUpdateAsync` 和 `ExecuteDeleteAsync` 用于高效批量操作，无需加载实体到内存。
+      ```csharp
+      // await _context.Products.Where(p => !p.IsActive).ExecuteDeleteAsync(); // 批量删除非活动产品
+      // await _context.Products.Where(p => p.Stock < 10).ExecuteUpdateAsync(s => s.SetProperty(p => p.IsLowStock, true)); // 批量更新低库存状态
+      ```
+    - 对于旧版EF Core或复杂批量逻辑，可能需要分批处理或使用Dapper/原生SQL。
+5. **必须在事务中执行多个相关的写操作** (EF Core `SaveChanges`/`SaveChangesAsync` 默认在事务中执行其操作。如果需要跨多个`SaveChanges`或与其他操作协调，使用`DbContext.Database.BeginTransactionAsync()`或`TransactionScope`)。
+
+### 【强制】数据库连接管理
+1. **依赖注入 `DbContext`**：ASP.NET Core项目中，`DbContext` 通常注册为作用域服务 (`services.AddDbContext<MyDbContext>(...)`)。框架负责其生命周期管理和连接处理。
+2. **禁止手动创建和管理 `DbConnection` 对象**，除非在非常特定的底层场景或使用Dapper且不通过DI管理连接时。应让EF Core或连接池管理。
+3. **连接字符串安全**：决不硬编码连接字符串。使用 `appsettings.json` (通过User Secrets保护开发环境敏感信息) 或 Azure Key Vault / Azure App Configuration 等安全存储。
+4. **连接池配置**：ADO.NET SQL Server provider (System.Data.SqlClient / Microsoft.Data.SqlClient) 默认启用连接池。Npgsql (PostgreSQL) 也类似。具体参数（如 `Max Pool Size`, `Min Pool Size`, `Connect Timeout`）可以在连接字符串中配置。团队应根据预估负载调整这些值。
+   ```json
+   // appsettings.json 中的连接字符串示例
+   "ConnectionStrings": {
+     "DefaultConnection": "Server=(localdb)\\mssqllocaldb;Database=MyDatabase;Trusted_Connection=True;Max Pool Size=100;Connect Timeout=30;"
+   }
+   ```
+
+--- 
+*本规范以 EF Core 为主，若项目使用 Dapper 或其他数据访问技术，部分规范需相应调整，但核心原则（如SQL优化、事务、连接管理）依然适用。*
+
+
+
+

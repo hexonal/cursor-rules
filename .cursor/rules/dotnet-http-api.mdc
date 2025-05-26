@@ -1,0 +1,230 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# .NET 项目HTTP API规范
+
+本规则基于现有项目规范，专注于HTTP API (主要指ASP.NET Core Web API) 的设计规范，适配 .NET 8 for Windows 环境。
+
+## HTTP接口规范
+
+### 【强制】接口URL格式
+1. 基本格式 (遵循POST-only原则时)：`http://xxx-your-domain.com/{area}/{version_or_network_type}/{sub_area}/{module}/{operation}`
+   (例如: `https://api.example.com/orders/v1/manage/create-order` or `https://api.example.com/user-service/app/profile/get-details`)
+2. 版本号格式：`v1`, `v2`, `v3`等 (用于URL路径中的版本标识)。
+3. 网络类型 (可选，如果需要区分不同客户端)：
+   - `app`: 移动端接口
+   - `web`: Web前端接口
+   - `public` / `internal` (或 `intranet`): 公开API或内部API
+4. URL必须全小写，单词间用中划线`-`分隔 (kebab-case)。
+5. URL路径应清晰表达资源和操作意图，即使所有请求均为POST，路径本身也应具有可读性，以区分不同业务操作。
+
+   **【RESTful 备选风格说明】**
+   虽然本规范当前要求所有接口使用POST，但标准的RESTful API设计通常会利用不同的HTTP方法 (GET, PUT, DELETE, PATCH) 来表达对资源的操作，并结合更名词化的URL路径 (e.g., `GET /users/{id}`, `POST /users`, `PUT /users/{id}`). 如果团队未来考虑转向更标准的RESTful实践，URL和方法设计将有所不同。
+
+### 【强制】请求方法规范 (遵循POST-only原则)
+1.  **所有HTTP API接口必须统一使用POST方法。**
+2.  **操作意图区分**：
+    *   业务操作的具体类型（如创建、查询、更新、删除、特定业务动作等）必须通过以下一种或组合方式在POST请求中明确：
+        *   **URL路径（推荐首选）**：接口的URL路径应尽可能清晰地描述其操作的资源和意图。例如，`POST /user-service/v1/users/create-user`，`POST /product-service/v1/products/get-by-id`，`POST /order-service/v1/orders/update-status`。
+        *   **请求体参数（次选，谨慎使用）**：可以在POST请求的JSON Body中包含一个明确的字段（如 `action` 或 `operationType`）来指定具体操作。此方式应谨慎使用，主要用于同一资源有多个高度相关的次要操作，以避免URL路径过多。
+            ```json
+            // POST /user-service/v1/users/manage
+            {
+              "action": "getUserDetails", // 或 "createUser", "updateProfile"
+              "userId": "123",
+              // ...其他参数
+            }
+            ```
+3.  **参数传递**：所有请求参数，包括传统上通过URL Query String传递的参数（如分页参数、查询条件、标识符等），都必须通过POST请求的Request Body以JSON格式传递。
+4.  **幂等性**：虽然所有请求都使用POST，但对于本质上是幂等的操作（如根据唯一ID更新资源、删除资源），服务端实现时仍需保证其幂等性。客户端在需要时（如网络超时后重试）可以安全地重发这些POST请求。非幂等操作（如不带唯一标识的创建）不应设计为可安全重试。服务端可通过检查请求中的幂等性Token (e.g., `Idempotency-Key` header or body field) 实现。
+5.  **缓存**：统一使用POST请求后，标准的HTTP GET缓存机制将不再适用。如需缓存，应在应用层面或通过其他服务端缓存策略实现 (e.g., `IDistributedCache` with response caching middleware configured for POST, or custom caching logic in services)。
+
+### 【强制】接口命名规范 (所有操作均使用POST, URL路径体现操作)
+*   接口URL路径应清晰描述其功能，即使方法统一为POST。
+*   建议在URL路径中包含动词或能表明操作类型的词语，以增强可读性。
+*   ASP.NET Core Controller 和 Action 方法名遵循 `PascalCase`。
+
+1. 新增接口 (POST):
+   Controller: `EmployeesController.cs`
+   Action: `public async Task<IActionResult> AddEmployeeAsync([FromBody] EmployeeCreateRequest request)`
+   URL: `POST /company-services/v1/employees/add-employee`
+   URL (批量): `POST /company-services/v1/employees/batch-add-employees`
+
+2. 修改接口 (POST):
+   Action: `public async Task<IActionResult> UpdateEmployeeAsync([FromBody] EmployeeUpdateRequest request)`
+   URL: `POST /company-services/v1/employees/update-employee` (按主键修改)
+   URL (批量): `POST /company-services/v1/employees/batch-update-employees`
+   URL (特定条件): `POST /company-services/v1/employees/update-by-phone`
+
+3. 删除接口 (POST):
+   Action: `public async Task<IActionResult> DeleteEmployeeAsync([FromBody] EmployeeDeleteRequest request)`
+   URL: `POST /company-services/v1/employees/delete-employee` (按主键删除, ID在request body中)
+   URL (批量): `POST /company-services/v1/employees/batch-delete-employees`
+
+4. 查询接口 (POST):
+   Action: `public async Task<IActionResult> GetEmployeeByIdAsync([FromBody] EmployeeGetByIdRequest request)`
+   URL: `POST /company-services/v1/employees/get-by-id`
+
+   Action: `public async Task<IActionResult> QueryEmployeesPageAsync([FromBody] EmployeePageQueryRequest request)`
+   URL: `POST /company-services/v1/employees/page-query`
+
+   Action: `public async Task<IActionResult> QueryEmployeesListAsync([FromBody] EmployeeListQueryRequest request)`
+   URL: `POST /company-services/v1/employees/list-query`
+
+### 【强制】请求参数规范 (JSON in POST Body)
+1.  **所有请求参数必须通过POST请求的Request Body以JSON格式传递。**
+2.  请求DTO类应定义在 `SolutionName.Api` 项目或专门的 `SolutionName.Contracts` 项目中，使用 `PascalCase` 命名属性。
+3.  分页参数 (示例，作为JSON请求体的一部分):
+    ```csharp
+    // 请求DTO: UserPageQueryRequest.cs
+    public class UserPageQueryRequest
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "页码必须至少为1。")]
+        public int PageNum { get; set; } = 1;    // 页码，从1开始
+
+        [Range(1, 100, ErrorMessage = "每页大小必须在1到100之间。")] // 最大每页大小应可配置
+        public int PageSize { get; set; } = 10;  // 每页大小，默认10
+
+        // ...其他查询条件字段...
+        public string NameQuery { get; set; } // 名称查询条件
+        public UserStatus? StatusQuery { get; set; } // 用户状态查询条件 (可为空表示不筛选)
+
+        // 排序参数
+        public string SortBy { get; set; }      // 排序字段 (例如："CreatedAtUtc")
+        public SortDirection? SortDirection { get; set; } // 排序方向枚举 (可为空)
+    }
+
+    public enum SortDirection { Asc, Desc } // 排序方向枚举
+    ```
+    请求体JSON示例:
+    ```json
+    {
+        "pageNum": 1,
+        "pageSize": 20,
+        "nameQuery": "张三",
+        "statusQuery": 1, // 假设 UserStatus 是一个映射到整数的枚举
+        "sortBy": "CreatedAtUtc",
+        "sortDirection": "Desc"
+    }
+    ```
+
+4.  时间参数：
+    *   请求 (在JSON Body中)：**推荐统一使用 ISO 8601 格式字符串** (如 `"2023-10-26T10:30:00.000Z"` 或 `"2023-10-26T13:30:00.000+03:00"`)。ASP.NET Core 默认的 `System.Text.Json` 会正确解析为 `DateTime` 或 `DateTimeOffset`。
+    *   响应：统一使用ISO 8601格式字符串 (`yyyy-MM-ddTHH:mm:ss.fffZ` for UTC, or with offset)。
+
+5.  枚举参数（在JSON Body中）：
+    *   **推荐传递枚举的字符串名称** (e.g., `"Paid"`)。`System.Text.Json` 默认支持枚举名和数值的转换。字符串更具可读性。
+    *   如果传递数值，需确保API文档清晰说明。
+    ```csharp
+    // 服务端枚举定义
+    public enum OrderStatus
+    {
+        Unpaid = 0,   // 未支付
+        Paid = 1,     // 已支付
+        Cancelled = -1 // 已取消
+    }
+
+    // 请求DTO中的属性
+    // public OrderStatus OrderStatus { get; set; }
+
+    // 请求体JSON示例 (传递字符串名称 - 推荐)
+    // { "orderStatus": "Paid" }
+    // 或请求体JSON示例 (传递数值)
+    // { "orderStatus": 1 }
+    ```
+
+### 【强制】响应规范
+1.  **必须统一使用** 在 `@dotnet-error-handling-and-operations.mdc` 中定义的 `ApiResponse<T>` 结构 (或 `ProblemDetails` for errors) 来包装所有响应数据。
+2.  分页响应：`ApiResponse.Data` 字段应包含一个分页数据结构，例如 `PagedResult<TItem>`。
+    ```csharp
+    // 分页结果结构体示例 (应定义在公共库或Contracts项目中)
+    public class PagedResult<T>
+    {
+        public List<T> Items { get; set; } // 当前页数据列表
+        public int PageNum { get; set; }   // 当前页码
+        public int PageSize { get; set; }  // 每页大小
+        public long TotalRecords { get; set; } // 总记录数
+        public int TotalPages => (int)Math.Ceiling((double)TotalRecords / PageSize); // 总页数
+
+        public PagedResult(List<T> items, int pageNum, int pageSize, long totalRecords)
+        {
+            Items = items;
+            PageNum = pageNum;
+            PageSize = pageSize;
+            TotalRecords = totalRecords;
+        }
+    }
+
+    // Controller Action 将返回 Task<IActionResult>，其结果是 Ok(ApiResponse<PagedResult<UserSummaryDto>>.Success(...))
+    ```
+    所有响应数据，包括分页结果，都包装在统一的 `ApiResponse<T>` 响应体内 (或遵循 ProblemDetails for errors)。
+
+### 【强制】接口文档规范 (Swashbuckle.AspNetCore for OpenAPI/Swagger)
+1.  ASP.NET Core API项目必须集成 `Swashbuckle.AspNetCore` NuGet包生成OpenAPI (Swagger) 文档。
+2.  Controller类和Action方法必须使用XML文档注释，Swashbuckle会提取这些注释生成API描述。
+    ```csharp
+    using Microsoft.AspNetCore.Mvc;
+    using Swashbuckle.AspNetCore.Annotations; // 用于更丰富的Swagger文档注解
+
+    [ApiController]
+    [Route("api/v1/users")] // Controller的基础路由
+    [SwaggerTag("用户管理 API", "提供用户管理相关操作接口")]
+    public class UsersController : ControllerBase
+    {
+        /// <summary>
+        /// 创建一个新用户。
+        /// </summary>
+        /// <remarks>
+        /// 请求示例 (POST /api/v1/users/create-user):
+        ///
+        ///     {
+        ///        "userName": "johndoe",
+        ///        "email": "john.doe@example.com",
+        ///        "password": "SecurePassword123!"
+        ///     }
+        ///
+        /// </remarks>
+        /// <param name="request">用户创建请求数据。</param>
+        /// <returns>一个包含已创建用户详情或错误的 ApiResponse。</returns>
+        /// <response code="201">返回新创建的用户详情。</response>
+        /// <response code="400">如果请求无效 (例如，校验错误)。</response>
+        /// <response code="500">如果发生内部服务器错误。</response>
+        [HttpPost("create-user")] // 具体操作路径，POST-only
+        [ProducesResponseType(typeof(ApiResponse<UserResponseDto>), StatusCodes.Status201Created)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)] // 或 ValidationProblemDetails
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status500InternalServerError)] // 或 ProblemDetails
+        [SwaggerOperation(Summary = "创建一个新用户", Description = "在系统中注册一个新用户。")]
+        public async Task<IActionResult> CreateUserAsync([FromBody] UserCreateRequest request)
+        {
+            // ... 实现逻辑 ...
+            // var (success, result, errorCode, message) = await _userService.CreateUserAsync(request);
+            // string traceId = HttpContext.TraceIdentifier;
+            // if (success)
+            //    return CreatedAtAction(nameof(GetUserByIdAsync), new { id = result.Id }, ApiResponse<UserResponseDto>.Success(result, traceId));
+            // else
+            //    return BadRequest(ApiResponse<UserResponseDto>.Fail(errorCode, message, traceId));
+            return Ok(); // 占位符
+        }
+
+        // 其他类似 GetUserByIdAsync, PageQueryUsersAsync 等遵循POST模式的Action方法
+    }
+    ```
+3.  必须包含以下内容 в OpenAPI/Swagger 文档中：
+    *   接口功能描述 (Controller `[SwaggerTag]`, Action `[SwaggerOperation]` and `<summary>`)。
+    *   **POST请求体JSON结构详细说明**（通过请求DTO类的属性XML注释 `<summary>` 和 `[Required]`等DataAnnotations, Swashbuckle会自动生成模型 schema）。包含所有参数的名称、类型、是否必填、含义、示例值 (`<example>`)、校验规则。
+    *   响应体JSON结构详细说明（通过 `[ProducesResponseType]` 指定 `ApiResponse<T>` 结构和内部数据 `T` 的结构，DTO属性同样用XML注释）。
+    *   可能的HTTP响应状态码及其含义 (`[ProducesResponseType]`)。
+    *   错误码说明 (参考 `@dotnet-error-handling-and-operations.mdc`，并在API描述或`remarks`中列出本接口可能返回的具体业务错误码)。
+    *   完整的请求和响应示例JSON (可在 `<remarks>` 中提供，或通过Swashbuckle的示例功能配置)。
+    *   **【推荐】**清晰说明接口的幂等性行为，以及（如果支持）客户端应如何传递幂等性令牌。
+    *   **【推荐】**对于废弃的接口或版本，在Action方法上使用 `[Obsolete]` 特性，Swashbuckle会将其标记为deprecated。
+
+---
+**附注：**
+*   所有API的实现必须严格遵守 `@dotnet-error-handling-and-operations.mdc` 中定义的错误处理、日志记录和安全规范。
+*   对于需要保证幂等性的重要操作（特别是创建类操作，以防客户端重试导致重复创建），应考虑支持客户端传递幂等性令牌（例如，在请求头或请求体中包含 `Idempotency-Key`），服务端进行相应处理。
+*   批量操作的请求体和响应体结构应有明确规范，例如请求为一个JSON数组，响应体能区分各条记录的处理成功与失败详情，可能需要自定义的批量响应 DTO。
+
+

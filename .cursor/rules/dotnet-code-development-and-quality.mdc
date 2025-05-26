@@ -1,0 +1,892 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# .NET 项目代码开发与质量规范
+
+本规范旨在统一.NET项目的代码编写风格、质量标准、测试要求和提交过程，以确保代码的健壮性、可读性和可维护性。本规范主要针对 .NET 8 for Windows 环境。
+
+## 一、代码编写规范
+
+### 【强制】方法设计原则
+1. 原子性原则：
+   - 一个方法只做一件事情。
+   - 方法的功能必须具有原子性，不可再分。
+   - 避免在一个方法中混合多个业务逻辑。
+   - 修改操作必须保证事务的原子性。
+   - **【DDD增强】对于领域实体（Domain Entity），其方法应封装该实体自身的业务行为和状态变更逻辑，体现充血模型的特点。避免将属于实体的行为泄露到Service层。**
+
+2. 可读性原则：
+   - 方法名必须清晰表达其功能 (PascalCase)。
+   - 参数命名必须见名知意 (camelCase)。
+   - 复杂逻辑必须添加注释说明。
+   - 避免使用魔法数字，应该使用常量或枚举定义。
+
+3. 分层原则：
+   ```csharp
+   // using Microsoft.Extensions.Logging; // 如果需要，引入ILogger
+
+   public class XxxAppService : IXxxAppService // 或 XxxBizService (如果这是团队偏好的命名)
+   {
+       private readonly IXxxRepository _xxxRepository; // 示例依赖：仓储接口
+       private readonly ILogger<XxxAppService> _logger; // 示例依赖：日志接口
+
+       // 构造函数，用于依赖注入
+       public XxxAppService(IXxxRepository xxxRepository, ILogger<XxxAppService> logger)
+       {
+           _xxxRepository = xxxRepository ?? throw new ArgumentNullException(nameof(xxxRepository));
+           _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+       }
+
+       public async Task DoSomethingAsync(XxxReq req) // 假设是异步操作
+       {
+           // 1. 参数校验
+           ValidateParams(req);
+
+           // 2. 业务处理 (例如：与仓储或其他服务交互)
+           //    示例: await _xxxRepository.PerformActionAsync(req.ToDomainModel());
+           _logger.LogInformation("正在处理请求 {RequestId}", req.RequestId);
+
+           // 3. 结果处理（如果需要）
+           //    示例: return result.ToApiResponse();
+       }
+
+       private void ValidateParams(XxxReq req)
+       {
+           if (req == null)
+           {
+               throw new ArgumentNullException(nameof(req));
+           }
+           // 在此处添加更具体的验证逻辑，可使用 FluentValidation 或 DataAnnotations
+           // 例如，如果 XxxReq 上使用了 DataAnnotations:
+           // Validator.ValidateObject(req, new ValidationContext(req), validateAllProperties: true);
+       }
+
+       // private void HandleResult() { /* 如果需要结果处理逻辑 */ } 
+   }
+   ```
+
+### 【强制】业务代码规范
+1. 服务实现类 (Application Services)：
+   - 通常不需要特定特性 (attribute) 标记为服务，依赖注入容器会自动发现。
+   - 必须使用构造函数注入 (Constructor Injection) 进行依赖注入。
+   - 建议实现对应的接口，以方便测试和依赖反转。
+   - 类名可以遵循 `XxxAppService` 或 `XxxService` 模式。
+   - **【DDD增强】应用服务 (`ApplicationService`) 主要负责编排领域对象（Entities, Value Objects, Domain Services）完成业务用例，处理事务、安全、通知等横切关注点，不应包含核心领域逻辑。核心领域逻辑应封装在领域实体和领域服务中。**
+
+2. 方法实现：
+   - 实现接口方法时，建议使用 `override` 关键字（如果基类有 `virtual` 方法）或显式接口实现。
+   - 必须进行参数校验（推荐使用 FluentValidation 库或 System.ComponentModel.DataAnnotations）。
+   - 必须处理异常情况（参考 `@dotnet-error-handling-and-operations.mdc`）。
+   - 必须记录关键日志（使用 `Microsoft.Extensions.Logging` 或 Serilog）。
+
+3. 事务处理 (使用 Entity Framework Core 示例)：
+   ```csharp
+   public class UpdateDataService
+   {
+       private readonly MyDbContext _dbContext; // 数据库上下文
+       private readonly ILogger<UpdateDataService> _logger; // 日志接口
+
+       public UpdateDataService(MyDbContext dbContext, ILogger<UpdateDataService> logger)
+       {
+           _dbContext = dbContext;
+           _logger = logger;
+       }
+
+       public async Task UpdateDataAsync(XxxReq req)
+       {
+           // 1. 数据校验
+           ValidateData(req);
+
+           // 启动事务
+           // EF Core 默认情况下 SaveChangesAsync 会隐式使用事务。
+           // 若需显式控制或包含多个操作:
+           using (var transaction = await _dbContext.Database.BeginTransactionAsync())
+           {
+               try
+               {
+                   // 2. 更新操作
+                   //    var entity = await _dbContext.Set<MyEntity>().FindAsync(req.Id);
+                   //    if (entity == null) throw new NotFoundException($"未找到ID为 {req.Id} 的实体。");
+                   //    entity.UpdateFrom(req); // 假设实体上有 UpdateFrom 方法
+                   //    _dbContext.Update(entity);
+
+                   await _dbContext.SaveChangesAsync(); // 如果此 SaveChangesAsync 中的所有操作都成功，则提交
+
+                   // 3. 结果处理 (例如：分发领域事件，发送通知)
+                   //    await HandleResultAsync();
+
+                   await transaction.CommitAsync(); // 提交事务
+                   _logger.LogInformation("请求 {RequestId} 的数据更新成功。", req.RequestId);
+               }
+               catch (DbUpdateException ex) // EF Core特定的数据库更新异常
+               {
+                   await transaction.RollbackAsync(); // 回滚事务
+                   _logger.LogError(ex, "请求 {RequestId} 因数据库错误导致数据更新失败。", req.RequestId);
+                   // 根据 dotnet-error-handling-and-operations.mdc 转换为 BizException
+                   throw new BizException(BizErrorCode.DatabaseOperationFailed, "更新操作期间数据库操作失败。", ex);
+               }
+               catch (Exception ex)
+               {
+                   await transaction.RollbackAsync(); // 回滚事务
+                   _logger.LogError(ex, "请求 {RequestId} 因意外错误导致数据更新失败。", req.RequestId);
+                   // 转换为 BizException 或 SystemException
+                   throw new BizException(BizErrorCode.UnexpectedError, "数据更新期间发生意外错误。", ex);
+               }
+           }
+       }
+
+       private void ValidateData(XxxReq req) { /* 参数校验逻辑 */ }
+       // private async Task HandleResultAsync() { /* 结果处理逻辑 */ }
+   }
+   ```
+
+4. 手动事务处理规范 (使用 ADO.NET 示例, 但优先推荐 EF Core 或 Dapper 的事务管理)：
+   在需要更细粒度控制或特定场景下，可以考虑手动管理事务。但优先推荐使用 Entity Framework Core 的事务功能或 Dapper 结合 `TransactionScope` 或 ADO.NET 事务。若直接使用 ADO.NET 进行手动事务管理，必须遵循以下规范：
+
+   a. **适用场景**：
+      - 事务边界无法简单通过 EF Core `SaveChangesAsync` 或 `TransactionScope` 定义在方法级别时。
+      - 需要在一个业务方法内执行多个独立的、需要精细控制的事务单元（不常见，可能指示设计问题）。
+      - 与某些不支持标准事务协调的特定组件交互。
+
+   b. **【强制】获取与释放资源**：
+      - 数据库连接 (`DbConnection`) 必须通过依赖注入的 `DbProviderFactory` 或直接注入的 `DbConnection` 实例（如果连接池管理）获取。
+      - 必须在 `finally` 块中确保 `DbConnection`、`DbCommand`、`DbDataReader` 等资源被正确关闭或 Dispose，即使发生异常。
+      - **强烈推荐使用 `await using` (C# 8.0+) 或 `using` 语句自动管理资源。**
+        ```csharp
+        // 推荐：对异步可释放资源使用 await using 
+        // 假设 _dbConnectionFactory 创建并打开一个连接
+        await using var connection = await _dbConnectionFactory.CreateOpenedConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SQL_XXX";
+        // ... 设置参数并执行
+        try
+        {
+            await command.ExecuteNonQueryAsync();
+        }
+        catch (DbException ex) // 更通用的 ADO.NET 异常
+        {
+            // ... 处理异常
+        }
+        ```
+
+   c. **【强制】事务边界显式控制**：
+      - 获取连接后，通过 `connection.BeginTransaction()` 开启事务。
+      - 业务逻辑成功完成后，必须调用 `transaction.Commit()` 或 `transaction.CommitAsync()` 提交事务。
+      - 当发生 `DbException` 或业务逻辑判断需要回滚时，必须在 `catch` 块或相应逻辑中调用 `transaction.Rollback()` 或 `transaction.RollbackAsync()`。
+      - 示例结构：
+        ```csharp
+        DbConnection connection = null;
+        DbTransaction transaction = null;
+        try
+        {
+            connection = await _dbConnectionFactory.CreateOpenedConnectionAsync(); // 假设使用工厂创建连接
+            transaction = await connection.BeginTransactionAsync(); // 开始事务
+
+            // ... 使用事务执行数据库操作 1
+            // var command1 = connection.CreateCommand();
+            // command1.Transaction = transaction; ...
+
+            // ... 使用事务执行数据库操作 2
+
+            await transaction.CommitAsync(); // 提交事务
+        }
+        catch (DbException ex)
+        {
+            if (transaction != null)
+            {
+                try
+                {
+                    await transaction.RollbackAsync(); // 回滚事务
+                }
+                catch (Exception rollbackEx)
+                {
+                    _logger.LogError(rollbackEx, "事务回滚失败。");
+                    // 参考 @dotnet-error-handling-and-operations.mdc 日志规范
+                }
+            }
+            _logger.LogError(ex, "手动事务期间数据库操作失败。");
+            // 将 DbException 转换为 BizException
+            // BizErrorCode.DatabaseOperationFailed 是一个示例，请替换为实际的错误码
+            throw new BizException(BizErrorCode.DatabaseOperationFailed, $"数据库操作失败: {ex.Message}", ex);
+        }
+        finally
+        {
+            if (transaction != null) await transaction.DisposeAsync();
+            if (connection != null) await connection.DisposeAsync(); // 或 connection.Close();
+        }
+        ```
+
+   d. **【强制】异常处理与日志**：
+      - 所有 `DbException` (或更具体的如 `SqlException` for SQL Server) 都必须被捕获。
+      - 捕获异常后，如果事务需要回滚，则执行回滚操作。
+      - 必须记录详细的错误日志，包含错误信息、堆栈、可能的业务上下文，遵循 `@dotnet-error-handling-and-operations.mdc` 的日志规范。
+      - 最终应将底层的 `DbException` (以及其他受检查异常或特定的运行时异常) 包装成或转换为 `BizException` (携带合适的 `BizErrorCode`) 向上抛出，遵循 `@dotnet-error-handling-and-operations.mdc` 的异常处理规范。对于无法通过 `BizErrorCode` 归类的、非预期的运行时故障，可按该规范使用 `SystemException`。
+
+   e. **【推荐】使用 `TransactionScope` (适用于同步或异步上下文流动的事务)**：
+      - **优先推荐**：`TransactionScope` 提供了一种更简单的编程式事务管理方式，可以跨越多个方法调用，并且可以与多种数据访问技术（包括 ADO.NET 和 EF Core，如果它们参与分布式事务）一起工作。
+      - `TransactionScope` 示例:
+        ```csharp
+        // using System.Transactions;
+
+        public async Task DoSomethingInTransactionAsync()
+        {
+            // 对于异步操作，确保启用 TransactionScopeAsyncFlowOption.Enabled
+            using (var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled))
+            {
+                try
+                {
+                    // 执行数据库操作 1 (例如：通过注入的Service/Repository):
+                    // await _yourCustomService.DoWork1Async();
+                    // await _yourCustomRepository.UpdateData1Async();
+                    _logger.LogInformation("在 TransactionScope 中执行数据库操作 1。");
+
+                    // 执行数据库操作 2:
+                    // await _yourCustomService.DoWork2Async();
+                    // await _yourCustomRepository.UpdateData2Async();
+                    _logger.LogInformation("在 TransactionScope 中执行数据库操作 2。");
+
+                    scope.Complete(); // 标记事务为完成状态，如果没有异常将会提交
+                }
+                catch (DataAccessException ex) // 示例：自定义的数据访问异常
+                {
+                    // 如果 scope.Complete() 未被调用，事务将自动回滚
+                    _logger.LogError(ex, "事务因 DataAccessException 失败，正在回滚。");
+                    throw new BizException(BizErrorCode.TransactionFailedDataAccess, "由于DataAccessException，事务内操作失败", ex);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "事务因意外异常失败，正在回滚。");
+                    throw new BizException(BizErrorCode.TransactionFailedUnexpected, "事务内操作意外失败", ex);
+                }
+            }
+        }
+        ```
+      - 注意: `TransactionScope` 默认使用 `IsolationLevel.Serializable`。根据需要调整 `TransactionOptions`。对于分布式事务，需要配置 MSDTC (在 Windows上)。
+
+   f. **【警告】避免滥用手动事务**：
+      - 仅在 EF Core 的 `SaveChangesAsync` 隐式事务或 `TransactionScope` 确实无法满足需求，且细粒度控制确实必要时才考虑直接使用 ADO.NET 手动事务。
+      - 手动事务代码更容易出错（如忘记释放资源、错误处理不当），增加了代码复杂度和维护成本。
+
+   g. **【注意】事务隔离级别与传播行为**：
+      - 直接使用 ADO.NET `DbConnection.BeginTransaction(IsolationLevel)` 时可以设置隔离级别。需谨慎，不当的隔离级别可能导致数据一致性问题或性能下降。
+      - 使用 `TransactionScope` 时，可以在构造函数中传入 `TransactionOptions` 来指定隔离级别和超时。
+
+### 【强制】命名规范 (.NET/C# Conventions)
+1. 类与接口命名 (PascalCase)：
+   - **【DDD增强】领域实体 (Entity, 具有唯一标识，封装核心业务逻辑和状态)：`Xxx` 或 `XxxEntity` (例如 `Order`, `UserEntity`)。实体类应包含其自身的业务方法，体现充血特性。**
+   - **【DDD增强】值对象 (Value Object, 无唯一标识，描述性属性集合)：`XxxValue` 或直接使用描述性名称 (例如 `AddressValue`, `Money`)。通常实现为 `record struct` 或 `record class` 以获得值语义。**
+   - **【DDD增强】领域服务 (Domain Service, 当某些领域逻辑不适合放在任何一个实体或值对象中时使用)：`XxxDomainService` (例如 `OrderPricingDomainService`)。接口为 `IXxxDomainService`。**
+   - **【DDD增强】应用服务 (Application Service, 协调领域层对象完成用例，处理事务、权限等)：`XxxAppService`。接口为 `IXxxAppService`。**
+   - **【DDD增强】工厂 (Factory, 负责复杂对象的创建)：`XxxFactory` (例如 `OrderFactory`)。接口为 `IXxxFactory`。**
+   - **【DDD增强】仓库 (Repository, 负责领域对象的持久化和读取，提供集合一样的接口操作领域对象)：`XxxRepository` (例如 `OrderRepository`)。接口为 `IXxxRepository`。**
+   - 数据持久化对象 (POCO/Entity for EF Core, 通常与数据库表结构对应)：`Xxx` 或 `XxxDb` (例如 `Order`, `UserDb`)。**注意：在DDD中，这些POCO主要用于EF Core的数据持久化，领域实体 (`XxxEntity`) 承载业务逻辑。Repository负责Entity与POCO之间的转换。**
+   - 数据传输对象 (DTO, Data Transfer Object, 用于应用层与外部之间的数据传输)：`XxxDto` (例如 `OrderDto`, `CreateUserDto`)。可以使用 `record` 类型简化定义。
+   - API 请求对象：`XxxRequest` 或 `XxxReq` (例如 `CreateOrderRequest`, `GetUserReq`)。
+   - API 响应对象：`XxxResponse` 或 `XxxResp` (例如 `OrderDetailsResponse`, `UserResp`)。
+   - Repository/DAO 接口 (如果不使用泛型仓储模式): `IXxxRepository` (DDD) 或 `IXxxDataAccess`
+   - Repository/DAO 实现类: `XxxRepository` or `XxxDataAccess`
+     - **【DDD增强】`XxxRepository` 实现 `IXxxRepository`，内部依赖 EF Core `DbContext` 或 Dapper 执行数据操作。**
+   - 应用服务接口：`IXxxAppService`
+   - 应用服务实现：`XxxAppService`
+   - 控制器 (ASP.NET Core MVC/API)：`XxxController` (例如 `OrdersController`)
+   - 工具类：`XxxUtils` 或 `XxxHelper` (静态类，方法为静态)
+   - 操作Redis相关的类: `RedisCacheService` (接口 `IRedisCacheService`)
+   - 操作分页相关的辅助类/扩展方法: `PaginationExtensions` or `PagedList<T>`
+   - gRPC 服务定义 (in .proto): `service XxxService { ... }`
+   - gRPC 服务实现: `XxxGrpcService` (继承生成的基类)
+   - 实体类 (POCOs, DTOs) 通常不需要显式实现 `ISerializable`，现代序列化库 (System.Text.Json, Newtonsoft.Json) 会自动处理。如果需要二进制序列化，可考虑 `[Serializable]` attribute。
+
+2. 方法命名 (PascalCase)：
+   - **【DDD增强】领域实体的方法命名应直接体现业务动作，例如 `order.Cancel()`, `product.ApplyDiscount(discountRate)`。**
+   - 异步方法必须以 `Async` 后缀结尾 (例如 `GetUserAsync`, `SaveChangesAsync`)。
+   - 获取单个对象：`GetXxxAsync` (应用服务或仓库) 或 `FindXxxAsync` / `FirstOrDefaultAsync` (常用于仓库/EF Core LINQ)。
+   - 获取多个对象：`ListXxxAsync` / `GetXxxListAsync` (应用服务或仓库) 或 `ToListAsync` (常用于仓库/EF Core LINQ)。
+   - 统计数量：`CountXxxAsync` 或 `CountAsync` (EF Core LINQ)。
+   - 新增：`CreateXxxAsync` / `AddXxxAsync` (应用服务) 或 `AddAsync` / `AddRangeAsync` (常用于仓库/EF Core)。
+   - 修改：`UpdateXxxAsync` (应用服务) 或直接修改实体属性后调用 `SaveChangesAsync` (EF Core)。
+   - 删除：`DeleteXxxAsync` (应用服务) 或 `RemoveAsync` / `RemoveRangeAsync` (常用于仓库/EF Core)。
+   - 分页: `GetPagedXxxAsync` or `PageXxxAsync`
+
+3. 变量与参数命名：
+   - 局部变量: `camelCase`
+   - 方法参数: `camelCase`
+   - 常量 (const, static readonly): `PascalCase` or `ALL_UPPER_SNAKE_CASE` (后者不常用在C#，PascalCase更普遍)。
+     ```csharp
+     public const int DefaultTimeoutMilliseconds = 5000; // 默认超时时间（毫秒）
+     public static readonly string DefaultUserName = "Guest"; // 默认用户名
+     ```
+   - 私有字段: `_camelCase` (推荐) or `camelCase`
+   - 公共属性 (Properties): `PascalCase`
+
+4. 项目代码创建规范 (基于 .NET Solution/Project 结构):
+   - `SolutionName.Api`: ASP.NET Core Web API 项目 (Controllers, API的DTOs, Startup/Program.cs, appsettings.json). 对应 Java的 `xxx-web`.
+   - `SolutionName.Application`: 应用服务层 (IXxxAppService, XxxAppService, 应用层DTOs). 对应 Java的 `xxx-biz` (部分) 和 `xxx-api-impl`.
+   - `SolutionName.Domain`: 领域模型层 (实体, 值对象, 领域服务, 仓储接口, 领域事件). 对应 Java的 `xxx-biz` (核心领域部分).
+   - `SolutionName.Infrastructure`: 基础设施层 (EF Core DbContext, 仓储实现, 外部服务客户端, 缓存实现). 对应 Java的 `xxx-dao` 和 `xxx-integration`.
+   - `SolutionName.Common`: 通用工具类、扩展方法、共享常量/枚举. 对应 Java的 `xxx-common`.
+   - `SolutionName.Tests.Unit`: 单元测试项目.
+   - `SolutionName.Tests.Integration`: 集成测试项目.
+   - 如果使用 gRPC, 可能会有 `SolutionName.GrpcServices` (服务端) 或 `SolutionName.GrpcClients` (客户端库).
+
+### 【强制】注释规范 (XML Documentation Comments)
+1. 类与接口注释：
+   ```csharp
+   /// <summary>
+   /// 描述 UserAppService 的功能。
+   /// 负责用户相关的应用逻辑处理。
+   /// </summary>
+   /// <remarks>
+   /// 更多备注或详细说明可以放在这里。
+   /// </remarks>
+   public class UserAppService : IUserAppService
+   { // ...
+   }
+   ```
+2. 方法注释：
+   ```csharp
+   /// <summary>
+   /// 根据用户唯一标识符获取用户信息。
+   /// </summary>
+   /// <param name="userId">用户的唯一标识符。</param>
+   /// <returns>一个表示异步操作的任务。
+   /// 任务结果包含找到的 <see cref="UserDto"/>；如果未找到，则返回null或抛出NotFoundException。</returns>
+   /// <exception cref="ArgumentOutOfRangeException">当 userId 小于或等于 0 时抛出。</exception>
+   /// <exception cref="NotFoundException">当未找到具有指定ID的用户时抛出。</exception>
+   public async Task<UserDto> GetUserByIdAsync(long userId)
+   { // ...
+   }
+   ```
+3. 属性与字段注释：
+   ```csharp
+   /// <summary>
+   /// 获取或设置用户名。
+   /// </summary>
+   /// <value>用户名。</value>
+   public string UserName { get; set; }
+
+   /// <summary>
+   /// 表示默认超时时间，单位为毫秒。
+   /// </summary>
+   public const int DefaultTimeoutMilliseconds = 5000;
+   ```
+4. 枚举注释：
+   ```csharp
+   /// <summary>
+   /// 定义订单的可能状态。
+   /// </summary>
+   public enum OrderStatus
+   {
+       /// <summary>
+       /// 订单已创建但尚未支付。
+       /// </summary>
+       Pending = 0,
+
+       /// <summary>
+       /// 订单已支付。
+       /// </summary>
+       Paid = 1,
+       // ... 其他状态
+   }
+   ```
+
+### 【强制】代码格式
+1. 缩进：4个空格 (Visual Studio/Rider 默认)。
+2. 行宽：最大120字符 (可在编辑器中配置)。
+3. 花括号 (Braces)：
+   - Allman 风格 (左花括号另起一行) 很常见，但 K&R 风格 (左花括号在同一行) 也有使用。**团队需统一风格，建议遵循IDE默认（通常是Allman）。**
+   ```csharp
+   // Allman 风格
+   public class MyClass
+   {
+       public void MyMethod()
+       {
+           if (condition)
+           {
+               // ...
+           }
+       }
+   }
+   ```
+4. 空行：
+   - 方法间空一行。
+   - 逻辑块间可空一行以增强可读性。
+   - 属性定义之间通常不空行，除非分组。
+5. `using` 指令 (Imports)：
+   - 放在文件顶部，`namespace`声明之前。
+   - 按字母顺序排序 (IDE可以自动格式化)。
+   - 移除未使用的 `using` 指令。
+   - 避免在文件级别使用 `global using`，除非在专门的 `Usings.cs` 文件中统一管理 (C# 10+)。
+6. 禁止使用行尾注释 (`// comment at end of line`) - 除非非常简短且必要。
+
+### 【强制】编码实践
+1. 异常处理：
+   - 应用中所有通过 `throw` 语句显式抛出或转换的异常，应统一使用自定义的 `BizException`（携带错误码）或更具体的业务领域异常 (如 `OrderNotFoundException`)，以及 `SystemException` (用于罕见系统故障)。参考 `@dotnet-error-handling-and-operations.mdc`。
+   - 必须记录详细日志，遵循 `@dotnet-error-handling-and-operations.mdc` 的日志规范。
+   - 必须进行统一异常处理（如通过ASP.NET Core Middleware），遵循 `@dotnet-error-handling-and-operations.mdc` 的异常响应处理规范。
+2. 日志打印 (使用 `Microsoft.Extensions.Logging` 或 Serilog):
+   - 必须使用结构化日志和消息模板 (占位符)。
+   - 必须进行日志级别判断（框架通常在内部处理，但配置日志级别很重要）。
+   - 必须包含追踪ID (Trace ID, e.g., from `HttpContext.TraceIdentifier` or an APM tool like Application Insights / OpenTelemetry)。
+3. 工具类 (Utility/Helper classes)：
+   - 必须是 `static` 类。
+   - 方法必须是 `static`。
+   - 如果不包含状态，则不需要构造函数。
+   - 必须编写单元测试。
+4. 配置加载 (使用 `Microsoft.Extensions.Configuration` - `IConfiguration`):
+   - 从 `appsettings.json`, 环境变量, Azure App Configuration 等来源加载。
+   - 使用 Options pattern (`IOptions<T>`, `IOptionsSnapshot<T>`, `IOptionsMonitor<T>`) 强类型配置对象。
+   - 必须进行配置验证 (e.g., using `DataAnnotations` on Options classes or `IValidateOptions<T>`)。
+
+### 【强制】依赖注入规范 (使用 `Microsoft.Extensions.DependencyInjection`)
+1. 构造函数注入 (Constructor Injection)：
+   - **唯一推荐的注入方式**。
+   - 依赖字段声明为 `readonly`。
+   - 在构造函数中对注入的依赖进行 null 检查。
+   ```csharp
+   public class MyService : IMyService
+   {
+       private readonly IDependency1 _dependency1;
+       private readonly IDependency2 _dependency2;
+
+       public MyService(IDependency1 dependency1, IDependency2 dependency2)
+       {
+           _dependency1 = dependency1 ?? throw new ArgumentNullException(nameof(dependency1));
+           _dependency2 = dependency2 ?? throw new ArgumentNullException(nameof(dependency2));
+       }
+       // ...
+   }
+   ```
+
+2. 字段注入 (Field Injection)：
+   - C# 中没有直接的字段注入特性像Java的 `@Autowired`。不适用。
+
+3. 属性注入 (Property Injection)：
+   - `Microsoft.Extensions.DependencyInjection` 不直接支持属性注入。可以通过手动调用服务定位器实现，但**强烈不推荐**，因为它违反了显式依赖原则。某些特定框架（如ASP.NET Core MVC中的Controller属性注入 `[FromServices]`）是例外，但应谨慎使用。
+
+4. 方法注入 (Method Injection)：
+   - `[FromServices]` 特性可以用在ASP.NET Core Controller 的操作方法参数上，用于注入作用域服务。适用于该服务仅用于单个操作方法的场景。
+   - 一般业务类中不推荐。
+
+### 【强制】代码修改范围限制
+1. 方法修改原则：
+   - 只能修改目标方法的内部实现。
+   - 避免修改方法的签名（参数列表和返回类型）以保持向后兼容性。如果必须修改，应视为重大变更，可能需要新版本。
+   - 避免修改方法的访问修饰符（`public`, `internal`, `protected`, `private`）。
+   - 禁止删除或修改现有的重要特性 (attributes) 如序列化、验证相关的。
+   - 禁止使用魔法值。
+
+2. 关联代码限制：
+   - 禁止修改非关联代码。
+   - 禁止修改被未提到的代码。
+
+3. 依赖管理：
+   - 禁止修改现有的依赖注入方式（应始终是构造函数注入）。
+   - 如需添加新的依赖，必须遵循构造函数注入规范。
+   - 禁止修改其他类的依赖关系。
+
+4. 事务边界：
+   - 禁止随意改变现有的事务边界 (e.g., `TransactionScope` 或 EF Core `SaveChanges` 调用点)。
+   - 禁止修改事务传播行为或隔离级别，除非有充分理由和评估。
+   - 如需调整事务配置，必须单独评估影响。
+
+5. 异常处理：
+   - 禁止删除现有的异常处理逻辑。
+   - 禁止修改异常抛出链的核心类型和错误码。
+   - 可以增加新的异常处理，但不能影响现有流程。
+
+6. 日志记录：
+   - 禁止删除现有的关键日志。
+   - 禁止随意修改生产环境重要日志的日志级别。
+   - 可以增加新的日志记录点。
+
+7. 代码提交：
+   - 每次修改必须限定在单一职责范围内。
+   - 提交信息必须清晰说明修改范围。
+   - 必须通过代码审查确认修改范围合规。
+
+### 遵守 SOLID 原则，确保 .NET 应用程序设计的高内聚性和低耦合性。
+- **S**ingle Responsibility Principle (SRP) - 单一职责原则
+- **O**pen/Closed Principle (OCP) - 开闭原则
+- **L**iskov Substitution Principle (LSP) - 里氏替换原则
+- **I**nterface Segregation Principle (ISP) - 接口隔离原则
+- **D**ependency Inversion Principle (DIP) - 依赖倒置原则
+
+## 二、代码质量与测试规范
+
+### 【强制】代码质量规范
+1. 性能要求：
+   - 避免在循环中进行数据库操作 (使用批量操作或预加载数据)。
+   - 避免在循环中进行耗时的外部调用 (例如 API 调用)。
+   - 批量操作 (如 EF Core `AddRangeAsync`, `RemoveRangeAsync`, `ExecuteUpdateAsync`, `ExecuteDeleteAsync` (EF Core 7+)) 必须控制数量和影响。
+   - 必要时使用缓存优化 (如 `IMemoryCache`, `IDistributedCache` with Redis/SQL Server)。
+   - 代码需要考虑性能问题，使用异步操作 (`async/await`) 避免阻塞线程，特别是在I/O密集型操作中。
+   - **【DDD增强】在充血模型中，领域实体的方法可能会触发关联对象的加载（懒加载或显式加载）。需要关注N+M查询问题 (类似N+1)，通过Repository层进行优化（如EF Core `Include`/`ThenInclude`），或在应用服务中进行批量操作的协调。**
+
+2. 代码组织：
+   - 相关的字段和属性放在一起。
+   - 相关的方法放在一起。
+   - 公共成员 (`public`) 放在前面，其次是 `internal`, `protected`, `private`。
+   - 使用 `#region` 对长文件或复杂类中的逻辑块进行组织 (可选，不宜滥用)。
+   - 增加适当的换行, 避免代码都堆这一坨, 导致review过乱。
+   - **【DDD增强】领域模型内部：实体类应将与其状态紧密相关的行为组织在一起。聚合根（Aggregate Root）应负责其边界内所有对象的一致性。**
+
+3. 可维护性要求：
+   - 代码必须符合本规范以及团队约定的其他C#/.NET编码标准。
+   - 必须编写单元测试。
+   - 必须处理所有可预期的异常情况。
+   - 必须添加必要的XML文档注释。
+
+### 【强制】单元测试规范
+1. 测试框架：推荐使用 xUnit 或 MSTest。NUnit 也是可选项。
+2. Mocking框架：推荐使用 Moq 或 NSubstitute。
+3. Assertion库：xUnit/MSTest/NUnit 内建断言，或 FluentAssertions 增强可读性。
+
+4. 测试用例编写 (xUnit with Moq and FluentAssertions 示例)：
+   ```csharp
+   // using Xunit;
+   // using Moq;
+   // using FluentAssertions;
+   // using System.Threading.Tasks;
+
+   public class XxxAppServiceTests
+   {
+       private readonly Mock<IXxxRepository> _mockXxxRepository; // Mock仓储
+       private readonly Mock<ILogger<XxxAppService>> _mockLogger; // Mock日志
+       private readonly XxxAppService _sut; // 被测系统 (System Under Test)
+
+       public XxxAppServiceTests()
+       {
+           _mockXxxRepository = new Mock<IXxxRepository>();
+           _mockLogger = new Mock<ILogger<XxxAppService>>();
+           _sut = new XxxAppService(_mockXxxRepository.Object, _mockLogger.Object);
+       }
+
+       [Fact] // xUnit 测试方法标记
+       public async Task DoSomethingAsync_WithValidRequest_ShouldReturnSuccess()
+       {
+           // Arrange - 准备阶段：设置测试数据和mock对象的行为
+           var request = new XxxReq { /* 初始化属性 */ };
+           var expectedDomainModel = request.ToDomainModel(); // 假设存在转换方法
+           var repositoryResponse = new SomeDomainType { /* ... */ };
+
+           _mockXxxRepository
+               .Setup(r => r.PerformActionAsync(It.Is<SomeDomainType>(dm => dm.Property == expectedDomainModel.Property)))
+               .ReturnsAsync(repositoryResponse); // 设置仓储方法的预期返回
+
+           // Act - 执行阶段：调用被测方法
+           var result = await _sut.DoSomethingAsync(request);
+
+           // Assert - 断言阶段：验证结果是否符合预期
+           result.Should().NotBeNull(); // 使用 FluentAssertions 进行断言
+           result.IsSuccess.Should().BeTrue(); // 假设响应DTO有 IsSuccess 属性
+           result.Data.Should().BeEquivalentTo(repositoryResponse.ToApiResponseData()); // 假设存在转换
+
+           _mockXxxRepository.Verify(r => r.PerformActionAsync(It.IsAny<SomeDomainType>()), Times.Once); // 验证仓储方法是否被调用一次
+       }
+
+       [Fact]
+       public async Task DoSomethingAsync_WhenRepositoryThrowsException_ShouldThrowBizException()
+       {
+           // Arrange
+           var request = new XxxReq { /* ... */ };
+           _mockXxxRepository.Setup(r => r.PerformActionAsync(It.IsAny<SomeDomainType>()))
+                             .ThrowsAsync(new DataAccessException("数据库错误")); // Mock仓储抛出异常
+
+           // Act
+           Func<Task> action = async () => await _sut.DoSomethingAsync(request);
+
+           // Assert
+           await action.Should().ThrowAsync<BizException>() // 期望抛出 BizException
+                       .WithMessage("数据库操作失败*") // 期望异常消息 (可使用通配符)
+                       .Where(ex => ex.ErrorCode == BizErrorCode.DatabaseOperationFailed); // 期望特定的错误码
+       }
+   }
+   ```
+
+5. 测试覆盖要求：
+   - 核心业务代码测试覆盖率不低于80%。
+   - 必须覆盖所有主要业务逻辑分支和异常路径。
+   - 必须覆盖所有边界条件。
+
+### 【强制】测试规范
+1. 测试类命名：`{ClassNameUnderTest}Tests` (例如 `OrderAppServiceTests`)
+2. 测试方法命名：
+   - `MethodName_Scenario_ExpectedBehavior` (例如 `GetUserByIdAsync_UserExists_ReturnsUserDto`)
+   - 或 `MethodName_StateUnderTest_ExpectedBehavior`
+   - BDD风格: `Given_When_Then` (方法名可以更具描述性)
+3. 必须包含断言 (assertions)。
+4. 必须考虑边界条件和异常情况。
+5. 每个测试方法应遵循 AAA (Arrange, Act, Assert) 模式。
+
+6. 测试覆盖率工具：
+   - Visual Studio Enterprise 内建代码覆盖率。
+   - Coverlet (开源，跨平台)。
+   - AltCover (开源)。
+
+7. 测试覆盖率指标：
+   - 分支覆盖率 (Branch Coverage)：>80%
+   - 行覆盖率 (Line Coverage)：>80%
+   - 方法覆盖率 (Method Coverage)：>90%
+   - 类覆盖率 (Class Coverage)：>90%
+
+## 三、代码提交规范
+
+### 【强制】提交信息格式 (Conventional Commits)
+```
+<type>(<scope>): <subject>
+
+[optional body]
+
+[optional footer(s)]
+```
+
+1. type类型：
+   - `feat`: 新功能 (feature)
+   - `fix`: 修复bug
+   - `docs`: 文档更新
+   - `style`: 代码格式调整 (不影响代码逻辑)
+   - `refactor`: 重构代码 (既不是新增功能，也不是修复bug)
+   - `test`: 增加或修改测试用例
+   - `chore`: 其他修改 (例如构建过程、辅助工具的变动)
+   - `perf`: 性能优化
+   - `build`: 影响构建系统或外部依赖的更改 (例如 NuGet 包版本更新)
+   - `ci`: CI配置文件和脚本的更改
+2. scope范围：
+   - 影响的功能模块或项目名 (例如 `auth`, `order-service`, `common-lib`)
+   - 可选，放在括号中。
+3. subject主题：
+   - 简短描述本次提交，不超过50-72个字符。
+   - 使用祈使句，现在时态 (例如 "Add user login endpoint" 而不是 "Added user login endpoint" 或 "Adds user login endpoint")。
+   - 首字母不要大写。
+   - 末尾不加句号。
+4. body正文：
+   - 详细描述改动原因和内容。
+   - 可以分多行。
+   - 解释 "what" 和 "why"，而不是 "how"。
+   - 可选。
+5. footer脚注：
+   - **Breaking Changes**: 如果有不兼容的变更，必须在脚注以 `BREAKING CHANGE:` 开头，并详细说明。
+   - **关闭Issue编号**: 例如 `Closes #123`, `Fixes #456`。
+   - 可选。
+
+### 【强制】提交原则
+1. 单一职责：
+   - 每次提交只做一件事。
+   - 相关的改动放在一起。
+   - 不相关的改动分开提交。
+2. 提交频率：
+   - 小步提交，频繁提交。
+   - 保持提交粒度合适。
+   - 避免积压大量未提交的改动。
+3. 提交时机：
+   - 完成一个小的、逻辑完整的功能单元。
+   - 修复一个特定的bug。
+   - 完成一次小的重构。
+   - 添加或修改一组相关的测试用例。
+
+### 【强制】代码审查 (Code Review / Pull Request Review)
+1. 审查要求：
+   - 所有重要代码（尤其是 `main`/`develop` 分支的合并）必须经过审查。
+   - 至少一个审查人通过（根据团队规模和项目关键性调整）。
+   - 解决所有审查意见或达成一致。
+2. 审查内容：
+   - 是否符合代码规范和设计原则。
+   - 业务逻辑是否正确、完整。
+   - 是否存在潜在的性能问题。
+   - 是否存在潜在的安全问题。
+   - 测试是否充分。
+   - 文档注释是否清晰。
+   - 是否引入了不必要的复杂性。
+3. 审查流程：
+   - 提交 Pull Request (PR) 或 Merge Request (MR)。
+   - 指定审查人或团队。
+   - 审查人评审代码并提出反馈。
+   - 作者根据反馈修改代码并更新PR/MR。
+   - 审查人确认通过后合并。
+
+## 四、代码修改边界与稳定性规范 (基本同Java，细节调整)
+
+本章节旨在定义代码修改的基本原则和边界，以保障系统的稳定性和可维护性，减少因修改引入的潜在风险。
+
+### 【核心原则】最小化影响与职责单一
+1.  **职责边界清晰**：
+    *   每个模块、服务或组件都应有明确定义的职责。
+    *   代码修改应严格限制在当前模块或组件的职责边界内，避免随意修改或依赖其他不相关模块的内部实现。
+    *   修改前需充分理解模块的既定职责和与其他模块的协定（接口）。
+
+2.  **影响范围评估**：
+    *   任何修改前，必须评估其潜在影响范围，包括对上游调用者、下游依赖方以及系统整体性能和稳定性的影响。
+    *   对于影响较大的修改，需要制定详细的方案、回滚计划，并进行充分的沟通。
+
+### 【强制】接口与契约稳定性
+1.  **对外接口（ASP.NET Core API / gRPC API）**：
+    *   **优先扩展**：对于已发布的接口，当需要增加功能或改变行为时，应优先考虑新增接口或在现有接口上新增方法（如果协议支持且不破坏兼容性，如gRPC服务新增RPC方法），而非直接修改原有接口签名或核心行为。对于REST API，可考虑版本化路径或请求/响应DTO。
+    *   **废弃策略**：旧接口或方法在有替代方案后，应标记为 `[Obsolete("废弃原因及替代API说明")]`，提供明确的迁移指南和废弃时间表，并通知所有已知调用方。
+    *   **兼容性**：任何对接口的修改（如参数增减、类型变更、返回值结构调整、核心业务逻辑变更）都必须经过严格的兼容性评估。不兼容的修改需要上升版本号（参考 `@dotnet-project-architecture-and-structure.mdc` 中的版本管理规范），并与所有依赖方协调升级。
+    *   接口行为的修改（即使签名不变）也需谨慎，确保符合接口文档和调用方预期。
+
+2.  **内部公共方法/类库 (Shared Libraries / NuGet Packages)**：
+    *   作为内部共享的工具类、基础服务或公共组件，其公共方法和类定义也应保持高度稳定性。
+    *   修改这些公共部分前，必须评估对项目内所有使用方的影响。
+    *   修改原则同对外接口，优先保证向后兼容。
+
+### 【推荐】通过配置与扩展点适应变化
+1.  **配置驱动**：对于易变的业务规则、阈值、开关等，应优先通过外部配置文件（如 `appsettings.json`）或配置服务（如 Azure App Configuration）进行管理，避免硬编码在代码中。使用 `IOptions<T>` 模式。
+2.  **扩展点设计**：在核心流程中，对可能发生变化或需要定制化的部分，可以预留清晰的扩展点（如策略模式、模板方法模式、事件驱动（MediatR）、插件架构），使得新功能的增加或行为的调整可以通过实现扩展接口而非修改核心代码来完成。
+
+### 【强制】公共组件与基础框架的修改 (如公司内部NuGet包)
+1.  **严格控制**：对公司级共享的基础组件、框架的修改，必须遵循更严格的审批流程和代码审查标准。
+2.  **充分测试与通知**：修改后必须进行全面的回归测试和兼容性测试，确保不会对现有业务产生负面影响。发布新版本后，需及时通知所有依赖的项目团队。
+
+### 【强制】测试覆盖与验证
+1.  **伴随测试**：任何代码修改（无论是bug修复还是功能新增）都必须伴随相应的单元测试、集成测试（如果适用）。
+2.  **测试边界**：测试用例需要覆盖修改点及其直接影响的逻辑边界。对于有潜在广泛影响的修改，需要考虑更全面的端到端测试或场景测试。
+3.  **回归测试**：确保修改没有破坏已有的功能。
+
+### 【强制】遵循版本控制与分支策略
+1.  **分支操作**：所有代码修改必须在独立的特性分支或修复分支上进行，严禁直接向主干分支（如 `main` 或 `develop`）推送未经评审和测试的代码。
+2.  **合并流程**：分支合并回主干前，必须通过代码审查 (Code Review / PR review) 和所有自动化测试。
+3.  **提交信息**：遵循项目既定的提交信息规范（参考本文档"代码提交规范"部分）。
+
+### 【强制】文档同步
+1.  **及时更新**：代码修改后，如果涉及到架构设计、接口定义（如OpenAPI/Swagger for REST, .proto for gRPC）、重要业务逻辑、配置项等，相关的设计文档、API文档、README、XML代码注释等必须同步更新。
+2.  **变更记录**：对于重要的接口或功能变更，建议在文档中保留清晰的变更历史记录。
+3.  **【DDD增强】架构图与模型图**：在技术方案文档中，推荐使用 Mermaid 语法绘制领域模型图（如聚合、实体、值对象关系图）、限界上下文映射图等，以清晰表达DDD设计。
+
+---
+
+## 五、AI辅助编码与规范融合实践 (.NET版)
+
+### 5.1 激活AI高级能力辅助编码与合规
+- **代码库模式检索与应用 (如引导AI调用 `codebase_search`, `grep_search`)**: 当需要实现特定功能或模式，但不确定如何在当前项目中最佳实践时，可引导AI利用代码搜索能力，在项目中查找符合 `@dotnet-code-development-and-quality.mdc` 规范的现有C#实现作为参考。例如，查找特定异常处理、日志格式 (Serilog/MEL)、事务管理 (EF Core/TransactionScope)或设计模式的合规应用实例。
+- **复杂编码任务的结构化拆解 (如引导AI调用 `mcp_sequential-thinking_sequentialthinking`)**: 对于复杂的函数实现、模块重构或算法设计，可以引导AI运用结构化思考能力，将任务分解为更小、更易管理步骤。确保每一步的设计和实现都考虑到本规范的各项要求（如方法原子性、参数校验 (FluentValidation)、异步(`async/await`)正确使用、异常处理、日志记录等），从而系统性地构建出高质量且合规的C#代码。
+- **库使用与最佳实践探索 (如引导AI调用 `mcp_context7_resolve-library-id`, `mcp_context7_get-library_docs` - 假设这些工具支持.NET库)**: 在引入新NuGet包或使用现有库的复杂功能时，可引导AI调用文档获取能力，深入理解库的API、最佳实践和潜在陷阱。这有助于编写出更健壮、高效且符合预期的.NET代码，避免不当使用导致的质量问题。
+
+### 5.2 AI作为编码规范的实时顾问
+- **即时规范查询与解读**：在编码过程中，遇到对本规范 (`@dotnet-code-development-and-quality.mdc`) 具体条款（如命名约定、异步方法设计原则、异常处理方式、XML文档注释标准等）的疑问时，可以直接向AI提问。例如："请解释一下本规范中关于应用服务层异步方法的设计要求"，或"根据本规范，DTO的属性XML注释应该包含哪些内容？"
+- **代码片段合规性检查**：可以粘贴少量C#代码片段，并要求AI基于本规范的具体章节或条款进行快速检查。例如："帮我看看这段C#代码的日志打印是否符合 `@dotnet-code-development-and-quality.mdc` 的日志规范 (使用MEL)？"，或者在重构时："这段旧C#代码在事务处理方面有哪些不符合本规范的地方 (和EF Core 相关)，应该如何修改？"
+- **最佳实践建议**：针对特定场景，可以询问AI在本规范框架下的推荐做法。例如："我需要在ASP.NET Core应用服务中处理一个可能调用多个仓储操作的业务逻辑，并确保整体事务性，根据规范，推荐使用EF Core的`SaveChangesAsync`隐式事务还是`TransactionScope`？"
+
+### 5.3 引导AI产出合规的高质量.NET代码
+- **明确的、基于规范的指令**：在要求AI生成C#代码时（如创建新的Controller、AppService、Repository、DTO或工具类），指令中应明确包含需遵循的规范要点。例如："请帮我创建一个名为`ProductAppService`的C#类。它应位于`Application`层。在确定其具体命名空间时，请**严格遵循** `@dotnet-project-architecture-and-structure.mdc` 中定义的项目包结构规范，该规范通常要求在项目基础命名空间（如 `CompanyName.ProjectName`）下，根据层（如 `Application`）和具体业务模块（如 `Products`）来组织，形成类似 `CompanyName.ProjectName.Application.Products` 的结构。请确保将占位符替换为实际名称。同时，确保使用构造函数注入，类和方法XML文档注释完整，所有类名、方法名、属性名均严格遵守 `@dotnet-code-development-and-quality.mdc` 中的命名规范（PascalCase），并遵循本规范中关于应用服务层方法设计（参数校验、异步优先、业务处理、结果处理分层）的要求。"
+- **结构化代码生成**：对于需要遵循特定结构的代码（如`XxxAppService`的模板、符合`@dotnet-code-development-and-quality.mdc`命名规范的`XxxRequest`/`XxxResponse` DTO的属性定义、xUnit测试类的骨架），可以要求AI直接生成符合规范的框架代码，然后开发者再填充具体的业务逻辑。
+- **合规性重构辅助**：当发现现有C#代码不符合规范时，可以向AI描述问题并引用相关规范条款（例如 `@dotnet-code-development-and-quality.mdc` 中关于命名或异步编程的规定），要求其提供重构建议或直接生成重构后的C#代码。例如："这段C#代码的异常处理不符合 `@dotnet-error-handling-and-operations.mdc` 中关于异常转换和日志记录的要求，请帮我重构它，确保所有类名、方法名和属性都符合PascalCase命名法，并且异步方法都以 `Async` 结尾。"
+
+### 5.4 AI辅助的代码质量保障与提升
+- **初步代码审查助手**：在提交代码进行人工Code Review之前，可以先让AI基于本规范进行一轮预审查。AI可以帮助识别一些较为明显的规范偏离点，如命名不规范、XML注释缺失、未使用推荐的依赖注入方式、魔法值使用、过于复杂的表达式、同步阻塞I/O等。
+- **单元测试用例生成与优化 (xUnit/Moq)**：可以要求AI为特定的C#方法或类生成符合本规范（如测试方法命名、断言使用、边界条件考虑）的xUnit测试用例（结合Moq进行mock）。也可以让AI分析现有测试用例，看是否覆盖了所有重要分支和异常路径，并提出优化建议。
+- **识别潜在的代码坏味道 (.NET C#)**：虽然AI可能无法完全替代资深开发者的判断，但可以引导其识别一些常见的C#代码坏味道，如方法过长、参数过多、重复代码、不当的 `async void` 使用、LINQ滥用导致性能问题等，并结合规范给出初步的优化方向。
+
+### 5.5 与AI协作的持续学习与反馈闭环
+- **将AI反馈视为学习机会**：当AI基于规范指出代码问题或提出改进建议时，开发者应将其视为一次加深规范理解和提升.NET/C#编码技能的机会。
+- **用规范校准AI**：如果AI生成的C#代码不完全符合本规范，开发者应进行修正，并可以将修正前后的对比和规范要点反馈给AI（如果AI支持此类学习交互），或者至少在后续提问中更精确地引导AI。这种互动有助于AI更好地适应项目的编码标准。
+- **共同演进规范与实践**：在与AI协作编码的过程中，如果发现某些规范条款在AI辅助下难以高效执行，或者AI的某些建议超出了当前规范但确实更优，可以作为讨论和修订规范的输入，促进规范与AI辅助开发实践的共同进步。
+
+## 六、领域驱动设计（DDD）与充血模型实践 (.NET版)
+
+本章节旨在指导如何在现有.NET项目规范体系下，有效地融合领域驱动设计（DDD）的核心思想，特别是充血模型，以构建更具业务表达力、可维护性和扩展性的系统。这是一种结合实际情况的、务实的DDD实践方式。
+
+### 6.1 核心理念：业务逻辑向领域模型内聚
+1.  **充血的领域实体 (Rich Domain Entity)**：
+    *   领域实体不仅仅是数据的容器（POCO），更要封装属于自身的业务行为和规则。例如，一个 `Order` 实体应该有 `Cancel()`, `ConfirmPayment()`, `AddItem(product, quantity)` 等方法，这些方法直接修改订单自身的状态或数据。
+    *   **优先将业务逻辑放在最能体现其本质的领域实体中**。
+2.  **应用服务 (Application Service) 的职责**：
+    *   应用服务（通常是 `XxxAppService`）是领域模型的直接客户。
+    *   **主要职责**：
+        *   **用例协调**：接收外部请求（如Controller的调用），加载相关的领域实体（通过Repository），调用实体的方法来执行业务逻辑。
+        *   **事务管理**：控制业务用例的事务边界 (e.g., using EF Core transactions or `TransactionScope`)。
+        *   **权限校验**：执行必要的安全检查 (e.g., using ASP.NET Core authorization policies)。
+        *   **与外部系统交互**：如发送通知、调用其他微服务（通过防腐层）。
+        *   **DTO转换**：负责领域对象与DTO之间的转换（e.g., using AutoMapper or manual mapping），向外部屏蔽领域模型的复杂性。
+    *   **避免**：应用服务不应包含核心的、属于某个特定实体的业务规则判断或状态变更逻辑。这些应在实体内部。
+3.  **领域服务 (Domain Service)**：
+    *   当某项业务逻辑不适合放在任何一个单一的实体或值对象中时（例如，它需要协调多个实体，或者它代表了一个重要的领域过程），可以使用领域服务 (`XxxDomainService`)。
+    *   领域服务的方法通常接收领域对象作为参数。
+    *   例如，一个复杂的订单价格计算规则，如果涉及多种促销策略和用户等级，可以由 `OrderPricingDomainService` 来实现。
+4.  **仓库 (Repository)**：
+    *   负责领域对象的持久化和检索，提供一个类似集合的接口 (`IXxxRepository`) 来操作聚合根（Aggregate Root）。
+    *   将领域模型与具体的持久化技术（如 EF Core, Dapper）解耦。
+    *   Repository 的接口定义在领域层 (`SolutionName.Domain`)，其实现通常放在基础设施层 (`SolutionName.Infrastructure`)。
+    *   负责领域实体 (`XxxEntity`) 与数据持久化对象 (POCOs for EF Core, e.g., `XxxDb`) 之间的映射转换。
+
+### 6.2 .NET版DDD的特点与协调
+1.  **现有规范的继承与演进**：
+    *   本DDD实践是在现有 `@dotnet-code-development-and-quality.mdc`、`@dotnet-project-architecture-and-structure.mdc` 等规范基础上的增强，不是完全颠覆。
+    *   **命名规范**：在现有.NET命名规则基础上，引入DDD特有的构件命名（如 `XxxEntity`, `XxxRepository`, `XxxDomainService`），并明确其在DDD分层架构中的角色。原有的POCOs (e.g., `XxxDb`) 继续作为数据持久化对象，`XxxService` 可演进为应用服务 `XxxAppService`。
+    *   **分层架构**：DDD的分层架构（表示层、应用层、领域层、基础设施层）可以与推荐的.NET项目结构（Api, Application, Domain, Infrastructure）进行清晰映射。
+        *   `SolutionName.Api` 模块对应表示层 (ASP.NET Core Controllers)。
+        *   `SolutionName.Application` 模块包含应用层 (AppServices)。
+        *   `SolutionName.Domain` 模块是纯粹的领域层。
+        *   `SolutionName.Infrastructure` 模块包含Repository的实现、EF Core DbContext、外部服务客户端等。
+2.  **POCO (EF Core Entities) 与 Domain Entity 的关系**：
+    *   EF Core Entities (e.g., `OrderDb` in `Infrastructure`): 通常是贫血的POCO，与数据库表结构一一对应，由EF Core管理，主要用于数据持久化。
+    *   Domain Entities (e.g., `Order` in `Domain`): 充血对象，包含业务逻辑和状态，是领域模型的核心。
+    *   `XxxRepository` (in `Infrastructure`) 负责 `Domain Entity` 和 `EF Core Entity (POCO)` 之间的转换。应用服务通过Repository获取 `Domain Entity`，操作实体后，再通过Repository持久化（通常会转换为POCO）。
+3.  **事务管理**：
+    *   事务依然推荐使用 EF Core 的 `DbContext.SaveChangesAsync()` 隐式事务，或在应用服务的方法上使用 `TransactionScope` (如果需要跨多个 `DbContext` 实例或与其他事务性资源协调)。
+4.  **代码组织 (示例)**：
+    *   在 `SolutionName.Domain` 模块中，按限界上下文（Bounded Context）或核心领域概念组织文件夹。例如：
+        ```
+        SolutionName.Domain/
+          └── Orders/              // 订单限界上下文或聚合
+              ├── Order.cs         // 实体 - 聚合根
+              ├── OrderItem.cs     // 实体 (订单聚合的一部分)
+              ├── ShippingAddress.cs // 值对象 (record struct 或 record class)
+              ├── OrderStatus.cs   // 枚举
+              ├── Events/
+              │   └── OrderPaidEvent.cs // 领域事件
+              ├── Services/
+              │   └── IOrderPricingDomainService.cs // 领域服务接口
+              └── Repositories/
+                  └── IOrderRepository.cs // 仓储接口
+        
+        SolutionName.Application/
+          └── Orders/
+              ├── IOrderAppService.cs // 应用服务接口
+              ├── OrderAppService.cs  // 应用服务实现
+              ├── Dtos/
+              │   ├── CreateOrderRequest.cs // 请求DTO
+              │   └── OrderDetailsResponse.cs // 响应DTO
+              └── // ... 其他应用逻辑，例如使用MediatR时的命令/查询处理器
+              
+        SolutionName.Infrastructure/
+          └── Persistence/
+              ├── DbContexts/
+              │   └── AppDbContext.cs // EF Core数据库上下文
+              ├── Configurations/  // EF Core 实体配置
+              │   └── OrderConfiguration.cs 
+              └── Repositories/
+                  └── OrderRepository.cs // IOrderRepository的EF Core实现
+          └── Orders/ // 如果需要，特定于订单上下文的基础设施组件
+              └── ExternalServices/
+                  └── ProductCatalogClient.cs // 外部产品目录服务客户端
+        ```
+5.  **逐步演进**：
+    *   对于现有项目，不必追求一次性完全DDD改造。可以从核心领域、业务复杂性高的模块开始试点，逐步引入充血模型和DDD思想。
+    *   新项目或新模块则推荐从一开始就采用这种DDD架构。
+
+### 6.3 实践DDD的收益与考量
+1.  **收益**：
+    *   **更清晰的业务表达**：代码结构更贴近业务语言，降低沟通成本。
+    *   **更高的内聚性**：业务逻辑和其操作的数据被封装在一起，易于理解和修改。
+    *   **更低的耦合度**：通过明确的接口和分层，降低模块间的依赖。
+    *   **更好的可测试性**：领域实体和领域服务通常不依赖外部框架，易于进行单元测试。
+    *   **更强的可扩展性**：清晰的边界和内聚的模块使得系统更容易适应变化。
+2.  **考量**：
+    *   **学习曲线**：团队需要理解DDD的核心概念和思想。
+    *   **设计复杂度**：初期可能需要更多的时间进行领域建模和设计。
+    *   **过度设计风险**：对于简单的CRUD操作，不必强行套用所有DDD模式，应务实选择。.NET版的DDD允许在简单场景下仍可使用贫血模型和事务脚本模式（通过简单的AppService直接操作EF Core）。
+    *   **性能**：充血模型中实体方法调用可能涉及数据库操作，需关注性能，尤其是在Repository的实现和实体间关联加载策略上（EF Core的`Include`, `ThenInclude`, `AsSplitQuery`等）。
+
+### 6.4 与AI协作实践DDD (.NET版)
+*   **模型构建辅助**：可以向AI描述业务场景，要求其初步识别潜在的.NET实体（C# classes/records）、值对象（C# record structs/classes）、聚合等，并讨论其合理性。
+*   **行为分配**：在设计实体方法时，可以与AI讨论某个业务逻辑应该属于哪个C#实体类，或者是否需要一个领域服务。
+*   **代码生成 (C#)**：在明确了实体及其行为后，可以要求AI生成符合充血模型特点的C#实体类骨架（包含属性和业务方法签名），并遵循本规范中的.NET命名和XML文档注释约定。
+*   **Repository模式实现 (EF Core / Dapper)**：可以要求AI生成`IXxxRepository`接口及其基于EF Core或Dapper的实现骨架，包括实体与POCO的转换逻辑。
+*   **规范检查**：提供C#代码片段，询问AI是否符合充血模型原则或本规范中关于DDD的特定.NET要求。
+
+</rewritten_file>
+
+

@@ -1,0 +1,308 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# .NET 项目错误码与异常处理规范
+
+本规则基于行业最佳实践和现有项目规范，专注于错误码定义、异常处理、日志记录等方面的最佳实践，适配 .NET 8 for Windows 环境。
+
+## 错误码规范
+### 【强制】错误码格式
+1. 错误码建议使用字符串格式，便于扩展和区分，或使用整数型。如果使用数字，格式可为：`[A][BB][CC]`
+   - A：错误级别，1-系统级，2-服务级，3-业务级 (如果用数字)
+   - BB：模块编号，如：01-User, 02-Order (如果用数字，建议与项目/领域对应)
+   - CC：具体错误编号，如：01-ParameterError, 02-PermissionDenied
+2. **【推荐】使用枚举或静态类定义错误码，提供类型安全和可读性。**
+   ```csharp
+   public static class AppErrorCodes // 或者 public enum AppErrorCode
+   {
+       // 系统级别 (例如，以 100xx 或 "SYS_xxx" 开头)
+       public const string SystemUnknownError = "SYS_001"; // 对应 "10000" - 系统未知错误
+       public const string SystemMaintenance = "SYS_002";    // 对应 "10001" - 系统维护中
+
+       // 服务级别 (例如，以 200xx 或 "SVC_xxx" 开头)
+       public const string ParameterValidationFailed = "SVC_001"; // 对应 "20001" - 参数校验失败
+       public const string ExternalApiCallFailed = "SVC_002";     // 对应 "20002" - 外部API调用失败
+       public const string DatabaseOperationFailed = "SVC_003"; // 对应 "20003" - 数据库操作失败
+
+       // 业务级别 - 用户模块 (例如，301xx 或 "USR_xxx" 开头)
+       public const string UserNotLoggedIn = "USR_001";       // 对应 "30101" - 用户未登录
+       public const string UserPermissionDenied = "USR_002";  // 对应 "30102" - 用户权限不足
+       public const string UserNotFound = "USR_003";          // 对应 "30103" - 用户未找到
+   }
+   ```
+
+### 【强制】错误码定义
+1. 错误码应在专门的静态类或枚举中统一定义。
+2. **【推荐】** 如果错误码关联特定消息模板，可以定义一个包含Code和MessageTemplate的结构或类。
+   ```csharp
+   public readonly struct ErrorDefinition
+   {
+       public string Code { get; } // 错误码
+       public string MessageTemplate { get; } // 消息模板
+       public HttpStatusCode DefaultHttpStatusCode { get; } // 默认HTTP状态码
+
+       public ErrorDefinition(string code, string messageTemplate, HttpStatusCode statusCode = HttpStatusCode.BadRequest)
+       {
+           Code = code;
+           MessageTemplate = messageTemplate;
+           DefaultHttpStatusCode = statusCode;
+       }
+   }
+
+   public static class DefinedErrors
+   {
+       public static readonly ErrorDefinition ParameterInvalid = new ("VAL_001", "参数 '{ParameterName}' 无效。", HttpStatusCode.BadRequest);
+       public static readonly ErrorDefinition OrderNotFound = new ("ORD_001", "未找到ID为 '{OrderId}' 的订单。", HttpStatusCode.NotFound);
+   }
+   ```
+3. 错误码必须有清晰的XML文档注释说明。
+4. 错误消息模板应支持结构化日志的占位符 (`{PlaceholderName}`)，并考虑国际化需求 (e.g., using .NET resource files)。
+
+### 【强制】错误码分类 (示例)
+1. 系统级错误 (例如，前缀 `SYS_` 或 `1xxxx`)
+   - `SYS_UNKNOWN`: 系统未知异常
+   - `SYS_MAINTENANCE`: 系统维护中
+   - `SYS_UNAVAILABLE`: 服务暂时不可用
+   - `SYS_BUSY`: 系统繁忙，请稍后重试
+2. 服务级错误 (例如，前缀 `SVC_` 或 `2xxxx`)
+   - `SVC_VALIDATION_FAILED`: 参数校验失败
+   - `SVC_EXTERNAL_API_FAILED`: 外部接口调用失败
+   - `SVC_DB_OPERATION_FAILED`: 数据库操作失败
+   - `SVC_CACHE_OPERATION_FAILED`: 缓存操作失败
+3. 业务级错误 (例如，按模块前缀 `USR_`, `ORD_` 或 `3xxxx`)
+   - `USR_NOT_AUTHENTICATED`: 用户未登录
+   - `USR_ACCESS_DENIED`: 权限不足
+   - `ORD_ACTION_RATE_LIMITED`: 操作频繁
+   - `ORD_NOT_FOUND`: 资源不存在 (订单不存在)
+
+## 异常处理规范
+
+### 【强制】异常分类
+1. **业务异常 (`BizException`)**: 用于处理可预期的业务规则校验失败或业务流程中的错误。应携带错误码和用户友好的消息。
+   ```csharp
+   public class BizException : Exception
+   {
+       public string ErrorCode { get; } // 错误码
+       public object ErrorData { get; } // 可选：用于附加的结构化错误信息
+
+       public BizException(string errorCode, string message, Exception innerException = null, object errorData = null)
+           : base(message, innerException)
+       {
+           ErrorCode = errorCode;
+           ErrorData = errorData;
+       }
+
+       // 使用 ErrorDefinition 的构造函数
+       public BizException(ErrorDefinition error, params object[] messageArgs) 
+           : base(string.Format(error.MessageTemplate, messageArgs))
+       {
+           ErrorCode = error.Code;
+       }
+   }
+   ```
+2. **系统异常 (`SystemException` - .NET BCL)**: 通常指由.NET运行时或BCL抛出的严重、不可恢复的错误。应用程序代码应避免直接抛出 `System.SystemException` 基类，而是抛出更具体的BCL异常 (如 `NullReferenceException`, `OutOfMemoryException` - 这些通常指示bug) 或自定义的 `AppSystemException` (如果需要统一包装基础设施故障)。
+3. **参数异常 (`ArgumentException`, `ArgumentNullException`, `ArgumentOutOfRangeException` - .NET BCL)**: 用于处理方法参数不符合契约的情况。通常由方法内部逻辑校验抛出，或由框架 (如ASP.NET Core模型绑定/验证) 自动抛出。
+4. **【推荐】领域异常 (`DomainException`)**: 可继承自 `BizException`，用于表示领域模型内部业务规则校验失败的特定场景 (例如：`OrderCancellationException`, `InsufficientStockException`)。此类异常通常由领域实体或领域服务抛出，并携带具体领域相关的错误信息和代码。
+
+### 【强制】异常处理原则
+1. **禁止直接抛出 `new Exception("Some error")`。** 应抛出更具体的异常类型，最好是自定义的携带错误码的异常。
+2. **禁止捕获异常后不处理或仅简单打印堆栈到控制台 (`Console.WriteLine(ex)`)。** 应使用日志框架 (MEL/Serilog) 按适当级别记录，并考虑是否需要转换为标准化的应用异常类型向上抛出，或作为错误响应返回给调用方。
+3. **禁止在 `finally` 块中抛出新异常，除非是为了清理资源时发生的严重错误。** 若`finally`中发生异常，应记录日志，注意它可能会掩盖 `try` 或 `catch` 块中原有的未处理异常。
+4. **避免在循环中不加控制地抛出异常。** 如果循环中可能发生大量预期内的"失败"情况（非真正异常），应考虑返回包含成功和失败项的集合，而不是为每个失败项都抛出异常。
+5. **禁止直接使用 `catch (Exception ex)` 来捕获所有异常然后吞掉，除非是在最顶层的全局异常处理器中。** 应捕获尽可能具体的异常类型进行针对性处理。如果确实需要捕获通用 `Exception`，通常应重新抛出 (`throw;` 而不是 `throw ex;` 以保留原始堆栈) 或将其包装为应用的标准异常类型。
+
+### 【强制】异常处理方式
+1. **ASP.NET Core API 控制器层 (Controller Layer)**:
+   - **统一使用全局异常处理中间件 (`ExceptionHandlerMiddleware`) 或异常过滤器 (`IExceptionFilter`, `IAsyncExceptionFilter`)** 来捕获未处理的异常。
+   - 中间件/过滤器必须将所有已知异常 (如 `BizException`, `DomainException`, BCL的 `ArgumentException` 族) 和未知异常转换为标准的API错误响应 (参考下方"统一响应规范")。
+   - 对于JSR303 (DataAnnotations) 或 FluentValidation 校验失败，ASP.NET Core 默认会返回 `400 Bad Request` 和 `ValidationProblemDetails`。全局异常处理应确保这类响应与其他错误响应格式一致。
+2. **应用服务层 (Application Service Layer - e.g., `XxxAppService`)**:
+   - 主要向上层 (Controller或gRPC服务实现) 抛出 `BizException` 或其子类 (如 `DomainException`)。
+   - 必须转换来自下游依赖（如Repository、外部服务客户端）的特定技术异常 (如 `DbUpdateException` from EF Core, `HttpRequestException` from HttpClient) 为 `BizException` 或 `AppSystemException` (自定义的系统级异常基类)，并附带合适的错误码和上下文信息。
+   - 必须处理事务相关的异常，并转换为合适的 `BizException` 或 `AppSystemException`。
+3. **基础设施层 (Infrastructure Layer - e.g., Repositories, External Service Clients)**:
+   - Repository实现：主要处理数据库相关异常 (如 `DbUpdateException`, `SqlException`)。应将其转换为更通用的自定义持久化层异常 (如 `PersistenceException`，可继承自 `BizException` 或 `AppSystemException` 并使用服务级错误码) 或直接允许它们被上层捕获并转换。
+   - 外部服务客户端：处理网络或协议相关的异常 (如 `HttpRequestException`, `TimeoutException`)，并转换为自定义的集成层异常 (如 `IntegrationException`，可继承自`BizException`或`AppSystemException`)。
+4. **工具类 (Utility Classes)**:
+   - 通常应抛出标准的BCL异常 (如 `ArgumentNullException` for invalid input) 或不捕获异常让调用者处理。
+   - 必须在XML文档注释中清晰说明其方法可能抛出的异常类型 (`<exception cref="Type">Condition.</exception>`)。
+
+## 日志规范 (使用 Microsoft.Extensions.Logging - MEL, 或 Serilog)
+
+### 【强制】日志配置
+1. 必须使用 `Microsoft.Extensions.Logging` (MEL)作为抽象，可搭配Serilog等具体实现提供更强大的功能。
+2. 必须按照不同环境 (`appsettings.Development.json`, `appsettings.Production.json`) 配置日志级别 (LogLevel) 和输出目标 (Providers: Console, Debug, File, ApplicationInsights, Seq, Splunk, etc.)。
+3. 日志文件输出 (如果使用文件提供程序如Serilog.Sinks.File)：
+   - 必须按照日期和/或大小切分日志文件。
+   - 必须配置日志保留策略 (保留天数或总大小)。
+4. **【推荐】使用异步日志处理** (e.g., Serilog的 `Async` sink wrapper) 以提高应用性能。
+
+### 【强制】日志级别使用规范 (MEL LogLevel)
+1. `LogLevel.Critical` (Serilog: Fatal): 系统级灾难性错误，导致应用程序或其一部分立即停止或无法使用。需要立即人工干预。
+2. `LogLevel.Error` (Serilog: Error): 发生错误，当前操作失败，可能影响系统功能，但不一定导致应用停止。需要调查。
+3. `LogLevel.Warning` (Serilog: Warning): 出现潜在问题或非关键性错误，当前操作可能仍能完成，但结果可能非预期或系统处于不稳定边缘。
+4. `LogLevel.Information` (Serilog: Information): 常规操作信息，跟踪应用程序流程，记录重要业务事件或状态变更。
+5. `LogLevel.Debug` (Serilog: Debug): 开发和故障排查期间使用的详细信息。生产环境通常应禁用或限制输出。
+6. `LogLevel.Trace` (Serilog: Verbose): 最详细的日志，包含大量细节，仅用于深度调试特定问题。生产环境必须禁用。
+
+### 【强制】日志内容规范
+1. **语言与清晰度**：
+   *   日志信息应主要使用**中文**或**英文** (团队统一)，确保清晰、准确、易于理解。
+   *   避免使用模棱两可或过于简略的表述。
+2. **结构化日志与消息模板**：
+   *   **必须使用MEL或Serilog的结构化日志功能和消息模板 (message templates with named placeholders `{PlaceholderName}` or positional placeholders for MEL `LogInformation("用户 {UserId} 登录自 {IPAddress}", userId, ipAddress)`)。**
+     ```csharp
+     // 正确 (MEL 使用命名占位符，.NET 6+ 或 Serilog):
+     _logger.LogInformation("用户 {UserId} 从 {IPAddress} 登录", userId, ipAddress);
+     // 正确 (MEL 位置占位符, 较早的 .NET 版本或简化场景):
+     _logger.LogInformation("用户 {0} 从 {1} 登录", userId, ipAddress);
+
+     // 记录异常 (异常对象作为第一个或最后一个专用参数):
+     _logger.LogError(ex, "处理订单 {OrderId} 时发生错误，客户ID: {CustomerId}", orderId, customerId);
+
+     // 错误 (直接在消息中进行字符串拼接或插值):
+     // _logger.LogInformation($"用户 {userId} 从 {ipAddress} 登录"); // 这会绕过结构化日志的优点
+     ```
+   *   这样做可以使日志输出为JSON、XML等结构化格式，极大地方便后续的存储、查询、分析和告警。
+3. **核心业务信息**：
+   *   必须记录关键业务操作的**输入参数** (或其关键部分) 和**输出结果** (或其摘要)。对于复杂对象，记录其核心字段或使用 `JsonSerializer.Serialize` (注意性能和敏感信息)。
+   *   必须记录重要状态的变更信息，例如订单状态流转、用户状态变化等。
+4. **异常信息**：
+   *   记录异常时，将异常对象作为 `LogError` 或 `LogCritical` 方法的专用参数传入，日志框架会自动记录完整的异常类型、消息和堆栈信息。
+5. **追踪信息 (Correlation & Trace IDs)**：
+   *   必须包含请求ID (Trace ID, e.g., `HttpContext.TraceIdentifier` in ASP.NET Core) 和关联ID (Correlation ID, 如果跨服务调用) 等，以便于在分布式系统中追踪完整的调用链。
+   *   **【推荐】** 通过集成OpenTelemetry SDK或特定APM工具 (如Azure Application Insights)，自动注入和传播Trace ID和Span ID，并利用其日志上下文功能 (MEL的 `BeginScope` 或Serilog的 `LogContext.PushProperty`) 丰富日志。
+6. **敏感信息处理**：
+   *   **严禁**在日志中记录明文的敏感信息，如用户密码、完整的身份证号、银行卡号、密钥、API Tokens等。
+   *   如果业务分析确实需要某些敏感信息的片段或脱敏形式，必须按照公司安全规范进行严格的脱敏处理。可以自定义日志中间件/enricher或在DTO的 `ToString()` /序列化逻辑中实现。
+
+### 【强制】日志格式规范 (当输出到文本文件或Console时，结构化输出到Seq/Splunk/AppInsights等更佳)
+(如果使用文本日志，一个常见的非结构化文本格式可能包含以下，但结构化JSON是首选)
+1. 时间戳：`yyyy-MM-dd HH:mm:ss.fff Z` (ISO 8601, UTC or with offset)
+2. 日志级别：`CRIT`/`FAIL`, `ERRO`, `WARN`, `INFO`, `DEBG`, `TRCE`
+3. 进程ID：`[PID]` (可选)
+4. 线程ID：`[ThreadId]`
+5. 请求/Trace ID: `[TraceId]`
+6. Logger Name (SourceContext in Serilog): 通常是完整类名
+7. 消息体：格式化的日志消息
+8. 异常信息 (如果存在): 异常类型、消息、堆栈跟踪
+*使用Serilog等库可以轻松配置这些输出格式，或直接输出JSON。*
+
+## 统一响应规范 (ASP.NET Core API)
+
+### 【强制】API响应格式
+```csharp
+// 推荐：对错误使用 ProblemDetails (RFC 7807)，对成功使用一致的包装器。
+
+// 成功响应:
+public class ApiResponse<T>
+{
+    public bool IsSuccess => string.IsNullOrEmpty(ErrorCode); // 或使用一个专用的 Success布尔字段
+    public T Data { get; set; }
+    public string ErrorCode { get; set; } // 成功时为 null 或空
+    public string Message { get; set; }   // 可选的成功消息或错误详情
+    public string TraceId { get; set; }   // 来自 HttpContext.TraceIdentifier
+    public long Timestamp { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(); // 时间戳
+
+    public static ApiResponse<T> Success(T data, string traceId)
+    {
+        return new ApiResponse<T> { Data = data, TraceId = traceId };
+    }
+
+    // 针对无数据返回的成功响应 (例如 POST/PUT/DELETE 操作)
+    public static ApiResponse<object> Success(string traceId, string message = null) 
+    {
+        return new ApiResponse<object> { TraceId = traceId, Message = message };
+    }
+
+    public static ApiResponse<T> Fail(string errorCode, string message, string traceId)
+    {
+        return new ApiResponse<T> { ErrorCode = errorCode, Message = message, TraceId = traceId };
+    }
+}
+
+// 对于错误，ASP.NET Core 内置了对 ProblemDetails 的支持。
+// 您的 ExceptionHandlerMiddleware 应将异常转换为 ProblemDetails 或自定义的 ApiResponse。
+// 如果需要，自定义 ProblemDetails 示例:
+// public class AppProblemDetails : Microsoft.AspNetCore.Mvc.ProblemDetails
+// {
+//     public string ErrorCode { get; set; }
+//     public string TraceId { get; set; }
+// }
+```
+
+### 【强制】响应状态码与错误码
+1. **HTTP标准状态码** 应作为HTTP响应的真实Status Code返回 (由Controller操作方法的结果或异常处理中间件设置)。
+2. `ApiResponse.ErrorCode` 字段存储内部定义的错误码 (如 `AppErrorCodes` 中的值)。
+   - **2xx HTTP Status (e.g., 200 OK, 201 Created, 204 No Content)**:
+     - `ApiResponse.IsSuccess` 为 true.
+     - `ApiResponse.ErrorCode` 为 null 或空.
+     - `ApiResponse.Data` 包含有效负载 (如果存在).
+   - **4xx/5xx HTTP Status (Client/Server Errors)**:
+     - `ApiResponse.IsSuccess` 为 false.
+     - `ApiResponse.ErrorCode` 包含具体的内部错误码 (e.g., `USR_NOT_FOUND`).
+     - `ApiResponse.Message` 包含用户友好或开发者友好的错误描述.
+     - `ApiResponse.Data` 通常在错误响应中为 null.
+     - 特定的HTTP状态码应符合RFC标准:
+       - `400 Bad Request`: `ApiResponse.ErrorCode` 用于参数校验 (e.g., `SVC_VALIDATION_FAILED`) 或格式错误的请求。
+       - `401 Unauthorized`: `ApiResponse.ErrorCode` 用于认证失败 (e.g., `AUTH_TOKEN_INVALID`)。
+       - `403 Forbidden`: `ApiResponse.ErrorCode` 用于授权失败 (e.g., `USR_ACCESS_DENIED`)。
+       - `404 Not Found`: `ApiResponse.ErrorCode` 用于资源未找到 (e.g., `ORD_NOT_FOUND`)。
+       - `429 Too Many Requests`: `ApiResponse.ErrorCode` 用于速率限制 (e.g., `SVC_RATE_LIMITED`)。
+       - `500 Internal Server Error`: `ApiResponse.ErrorCode` 用于未处理的系统错误 (e.g., `SYS_UNKNOWN`) 或严重的服务级错误。
+
+### 【强制】异常响应处理 (in Global Exception Handler Middleware/Filter)
+1. 统一使用 `ApiResponse<T>` (for success) 和 `ProblemDetails` or `ApiResponse<object>` (for errors) 包装所有API响应。
+2. 服务端抛出的受控异常 (`BizException`, `DomainException`) 必须被捕获，其携带的错误码和消息用于填充 `ApiResponse` 的 `ErrorCode` 和 `Message` 字段。HTTP状态码根据异常类型或错误定义设置 (e.g., `BizException` might carry a suggested `HttpStatusCode`).
+3. 参数校验异常 (`ArgumentException`, FluentValidation `ValidationException`) 应转换为 `400 Bad Request`，并在 `ApiResponse` (或 `ValidationProblemDetails`) 中包含详细的校验失败信息和对应的错误码 (`SVC_VALIDATION_FAILED`)。
+4. 未处理的系统异常 (e.g., `NullReferenceException` or custom `AppSystemException`) 统一返回 `500 Internal Server Error` HTTP状态码，以及对应的系统内部错误码 (`SYS_UNKNOWN`) 和通用错误消息。**决不能将原始异常堆栈暴露给客户端。**
+5. 所有错误响应必须包含请求追踪ID (`TraceId`) 在 `ApiResponse` 或 `ProblemDetails` (e.g., as an extension property) 中，便于问题排查。
+
+## 参数校验规范
+
+### 【强制】校验方式
+1. **Controller/API层方法参数 (Request DTOs, route parameters, query parameters)**:
+   - **优先使用 FluentValidation 库** 进行声明式、链式、可组合的复杂校验规则定义。它提供了比 DataAnnotations 更强大和灵活的校验能力。
+   - DataAnnotations (`System.ComponentModel.DataAnnotations` attributes like `[Required]`, `[StringLength]`, `[Range]`) 可用于简单校验，ASP.NET Core MVC/API 框架会自动执行。
+   - ASP.NET Core会自动将模型校验失败 (DataAnnotations or FluentValidation integrated with ASP.NET Core) 转换为 `400 Bad Request` 响应，通常是 `ValidationProblemDetails` 类型。
+2. **应用服务层 (Application Service Layer)**:
+   - **必须对核心业务参数进行深度校验**，包括业务规则校验、状态一致性校验、跨字段校验、依赖资源存在性校验等。这些通常无法仅通过DTO层面的注解或FluentValidation规则完成，需要在服务方法内部实现。
+   - 对于从Controller层传入的已通过初步校验的DTO，服务层可信任其基本格式的正确性，但仍需进行业务层面的校验。如果服务层方法参数是领域对象或原始类型，则必须进行全面校验。
+3. **自定义校验 (FluentValidation)**:
+   - 定义 `AbstractValidator<T>` 的子类来封装特定类型的校验逻辑。
+     ```csharp
+     // using FluentValidation;
+     public class CreateOrderRequestValidator : AbstractValidator<CreateOrderRequest>
+     {
+         public CreateOrderRequestValidator()
+         {
+             RuleFor(x => x.CustomerId).GreaterThan(0).WithMessage("客户ID必须为正数。");
+             RuleFor(x => x.ProductIds).NotEmpty().WithMessage("至少需要订购一个产品。");
+             RuleForEach(x => x.ProductIds).GreaterThan(0).WithMessage("产品ID必须为正数。");
+             // ... 更多规则，包括使用 .Must() 的自定义规则
+         }
+     }
+     ```
+   - 在 `Startup.cs` / `Program.cs` 中注册验证器并集成到ASP.NET Core管道中。
+4. 全局异常处理中间件/过滤器必须能处理 `FluentValidation.ValidationException` (如果配置为抛出异常)，并将其转换为标准的API错误响应 (400 Bad Request, `SVC_VALIDATION_FAILED` 错误码，包含详细的校验错误信息)。
+
+### 【强制】校验规则 (FluentValidation 示例)
+1. 必填字段: `.NotEmpty()` (for strings, collections), `.NotNull()` (for nullable types)
+2. 长度限制: `.Length(min, max)`, `.MinimumLength(min)`, `.MaximumLength(max)`
+3. 范围限制: `.GreaterThan(value)`, `.LessThan(value)`, `.InclusiveBetween(from, to)`
+4. 格式校验: `.EmailAddress()`, `.Matches("regex")` (for regex patterns)
+5. 自定义校验: `.Must(customPredicate).WithMessage("自定义错误消息")` or creating custom `PropertyValidator`.
+
+## 安全规范
+
+### 【强制】异常信息处理与日志安全
+1. **生产环境严禁在API响应中直接返回原始异常的详细信息或堆栈跟踪。** 使用统一的错误响应结构，只包含错误码、通用消息和TraceID。
+2. **敏感信息必须脱敏后才能记录到日志中。** 例如，使用Serilog的Destructuring或自定义Log Event Enricher来处理包含敏感数据的对象。
+3. 系统级、不可恢复的异常，应统一返回通用的"系统繁忙"或"发生内部错误"等消息给用户，并将详细技术信息记录到安全日志中。
+4. **必须将完整的异常信息（包括堆栈跟踪、内部异常）记录到服务端安全日志系统中**，用于问题排查和审计，但这些细节不能泄露给客户端。
+
+*(其余安全规范如输入验证、输出编码、认证授权、依赖管理、数据保护等，应参考专门的.NET安全编码指南和OWASP Top 10等标准。)*
+
+

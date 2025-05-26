@@ -1,0 +1,301 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# .NET 项目架构与结构规范
+
+本规范旨在统一.NET项目的架构设计、模块划分、代码结构、分支管理和版本控制等方面，以提高项目的可维护性、可扩展性和团队协作效率。项目的结构设计旨在支持清晰的关注点分离，并为实施领域驱动设计（DDD）提供基础，适配 .NET 8 for Windows 环境。
+
+## 一、基础框架要求
+
+### 【强制】技术栈版本
+1. .NET版本：.NET 8.0 (LTS)
+2. ASP.NET Core：8.0
+3. Entity Framework Core (EF Core)：8.0
+4. gRPC (如果用于RPC)：最新稳定版 (e.g., Grpc.AspNetCore, Grpc.Net.Client)
+5. 配置管理：Microsoft.Extensions.Configuration (appsettings.json, 环境变量, User Secrets, Azure App Configuration, etc.)
+6. 缓存：Microsoft.Extensions.Caching.Memory (`IMemoryCache`), Microsoft.Extensions.Caching.StackExchangeRedis (`IDistributedCache` with Redis)
+7. 数据库：SQL Server (最新版), PostgreSQL (最新版), MySQL (最新兼容版) - 具体选择基于项目需求
+8. 搜索引擎 (如果需要)：Elasticsearch (最新兼容版 via NEST/Elastic.Clients.Elasticsearch) or Azure Cognitive Search
+9. NoSQL (如果需要)：MongoDB (最新兼容版 via MongoDB.Driver), Azure Cosmos DB
+10. 消息队列：Azure Service Bus, RabbitMQ, Kafka (具体选择基于项目需求和现有设施)
+11. 任务调度：Hangfire, Quartz.NET, Azure Functions/WebJobs
+12. 构建工具：.NET CLI (`dotnet build`), MSBuild (Visual Studio)
+13. 服务熔断/弹性：Polly
+14. 日志框架：Microsoft.Extensions.Logging (MEL) with Serilog as a provider (推荐)
+15. NuGet包管理：所有项目使用 NuGet 管理依赖。
+
+### 【强制】项目特性
+1. 所有新项目必须是多项目解决方案 (.sln) 结构。
+2. 必须使用 ASP.NET Core 框架进行Web API或Web应用开发。
+3. 优先使用 Entity Framework Core 进行关系型数据库操作；Dapper 可作为高性能场景的补充。
+4. 必须使用 Microsoft.Extensions.Logging (MEL) 作为日志抽象，推荐 Serilog 作为具体实现和输出管理。
+5. 必须使用 Microsoft.Extensions.Configuration 进行配置管理，敏感配置通过 User Secrets (开发环境) 或 Azure Key Vault / HashiCorp Vault (生产环境) 管理。
+
+## 二、项目结构规范 (.NET Solution and Projects)
+
+### 【强制】解决方案与项目划分
+项目应采用多项目解决方案结构，以实现关注点分离和高内聚低耦合，并支持DDD分层架构：
+
+1.  **`SolutionName.Api`** (ASP.NET Core Project - Web API or Web App):
+    *   处理HTTP请求的Web层，对外暴露HTTP API或提供Web UI。
+    *   包含Controllers, Views (for MVC), Razor Pages, wwwroot (静态文件)。
+    *   API相关的请求DTO (`XxxRequest.cs`) 和响应DTO (`XxxResponse.cs`)。
+    *   `Program.cs` (对于.NET 6+，或 `Startup.cs` 对于旧版本) 用于服务注册、中间件管道配置。
+    *   `appsettings.json` 和特定环境的配置文件。
+    *   API版本控制配置 (例如，使用 `Asp.Versioning.Mvc`)。
+
+2.  **`SolutionName.Application`** (.NET Class Library):
+    *   应用服务层，协调领域逻辑，处理用例。
+    *   包含应用服务接口 (`IXxxAppService.cs`) 及其实现 (`XxxAppService.cs`)。
+    *   应用层DTOs (Data Transfer Objects) - 用于应用服务与API层或领域层之间的数据传输。
+    *   命令 (Commands) 和查询 (Queries) 定义 (如果使用CQRS模式，例如配合MediatR)。
+    *   参数校验逻辑 (例如，针对应用层DTO或命令/查询的FluentValidation验证器)。
+    *   **调用 `Domain` 层的领域服务和仓库接口。**
+
+3.  **`SolutionName.Domain`** (.NET Class Library):
+    *   领域模型的核心，不依赖任何具体技术实现 (纯POCOs和逻辑)。
+    *   **领域实体 (Entities)**: e.g., `Order.cs`, `Product.cs`. 包含业务状态和行为 (充血模型)。
+    *   **值对象 (Value Objects)**: e.g., `Address.cs` (通常是 `record struct` 或 `record class`)。
+    *   **领域服务 (Domain Services)**: 接口 (`IXxxDomainService.cs`) 和可选的实现 (`XxxDomainService.cs`)，封装不属于任何特定实体的领域逻辑。
+    *   **仓库接口 (Repository Interfaces)**: e.g., `IOrderRepository.cs`. 定义领域对象的持久化契约。
+    *   **领域事件 (Domain Events)**: e.g., `OrderPaidEvent.cs`.
+    *   领域特定的枚举和自定义异常 (`DomainException.cs`)。
+
+4.  **`SolutionName.Infrastructure`** (.NET Class Library):
+    *   基础设施层，实现领域层定义的接口，处理与外部世界的交互。
+    *   **数据持久化实现**: EF Core `DbContext` (`ApplicationDbContext.cs`), 实体配置 (`EntityTypeConfiguration`), 数据库迁移 (`Migrations` 文件夹)。
+    *   **仓库实现 (Repository Implementations)**: e.g., `OrderRepository.cs` (实现领域层的 `IOrderRepository` 接口)。
+    *   **外部服务客户端**: HTTP客户端 (例如，使用 `IHttpClientFactory`), gRPC客户端, 云服务SDKs。
+    *   **缓存实现**: `RedisCacheService.cs` (实现应用层/领域层的 `ICacheService` 接口)。
+    *   **消息队列实现**: 针对Azure Service Bus, RabbitMQ等的生产者/消费者。
+    *   **文件存储实现**, **邮件服务实现**, 等。
+
+5.  **`SolutionName.Common`** (.NET Class Library - 可选, 但推荐):
+    *   解决方案内多个项目共享的通用组件、工具类、扩展方法。
+    *   不应包含业务逻辑，只包含纯粹的技术性或通用性代码。
+    *   例如: `StringExtensions.cs`, `DateTimeHelper.cs`, `Constants.cs`, 通用关注点 (如自定义日志增强器，如果不放在Infrastructure层)。
+
+6.  **`SolutionName.Contracts`** (.NET Class Library - 可选, 如果构建微服务，用于共享DTO/枚举):
+    *   如果构建微服务架构，此项目可包含跨服务共享的DTOs、枚举、错误码定义等。对于单体应用，这些通常在 `.Api` 或 `.Application` 项目中。
+
+7.  **Test Projects** (测试项目):
+    *   **`SolutionName.Tests.Unit`** (.NET Test Project - xUnit, MSTest, or NUnit):
+        *   针对 `Application`, `Domain`, 和 `Infrastructure` (mock依赖) 层的单元测试。
+    *   **`SolutionName.Tests.Integration`** (.NET Test Project):
+        *   集成测试验证组件间的交互，如API到数据库的完整流程 (使用 `TestServer` 进行内存API测试, 或针对真实/测试数据库进行测试)。
+    *   **`SolutionName.Tests.Architecture`** (.NET Test Project - 可选, 使用 NetArchTest.Rules):
+        *   架构规则测试，确保项目间的依赖关系符合设计。
+
+*(SolutionName通常是公司或产品的主名称，例如 `Hexonal.Oms` 或 `Yp.ProjectX`)*
+
+### 【强制】命名空间规范
+1. 基础命名空间前缀：`CompanyName.SolutionName` (e.g., `Hexonal.Oms`, `Yp.ProjectX`).
+2. 项目内的命名空间应反映其文件夹结构和所属层/模块。
+   ```csharp
+   // SolutionName.Api 项目示例
+   namespace CompanyName.SolutionName.Api.Controllers.V1; // V1版本控制器
+   namespace CompanyName.SolutionName.Api.Models.Orders.Requests; // 订单相关的请求模型
+   namespace CompanyName.SolutionName.Api.Middleware; // 中间件
+
+   // SolutionName.Application 项目示例
+   namespace CompanyName.SolutionName.Application.Services.Orders; // 订单应用服务
+   namespace CompanyName.SolutionName.Application.Features.Orders.Commands.CreateOrder; // 创建订单的命令特性 (CQRS)
+   namespace CompanyName.SolutionName.Application.Validation.Orders; // 订单相关的验证逻辑
+
+   // SolutionName.Domain 项目示例
+   namespace CompanyName.SolutionName.Domain.Aggregates.OrderAggregate; // 订单聚合根
+   namespace CompanyName.SolutionName.Domain.Entities; // 领域实体
+   namespace CompanyName.SolutionName.Domain.ValueObjects; // 值对象
+   namespace CompanyName.SolutionName.Domain.Events; // 领域事件
+   namespace CompanyName.SolutionName.Domain.Exceptions; // 领域异常
+   namespace CompanyName.SolutionName.Domain.Services; // 领域服务
+   namespace CompanyName.SolutionName.Domain.Repositories; // 仓储接口
+
+   // SolutionName.Infrastructure 项目示例
+   namespace CompanyName.SolutionName.Infrastructure.Persistence.DbContexts; // 数据库上下文
+   namespace CompanyName.SolutionName.Infrastructure.Persistence.Repositories; // 仓储实现
+   namespace CompanyName.SolutionName.Infrastructure.Persistence.Configurations; // EF Core实体配置
+   namespace CompanyName.SolutionName.Infrastructure.ExternalServices.PaymentGateway; // 支付网关外部服务客户端
+   namespace CompanyName.SolutionName.Infrastructure.Caching; // 缓存实现
+
+   // SolutionName.Common 项目示例
+   namespace CompanyName.SolutionName.Common.Extensions; // 扩展方法
+   namespace CompanyName.SolutionName.Common.Utilities; // 工具类
+   ```
+
+### 【强制】资源文件规范 (appsettings & logging)
+1. 配置文件结构 (`SolutionName.Api` 项目):
+   ```
+   SolutionName.Api/
+     ├── appsettings.json                 // 基础配置文件
+     ├── appsettings.Development.json     // 开发环境覆盖配置
+     ├── appsettings.Staging.json         // Staging环境覆盖配置
+     ├── appsettings.Production.json      // 生产环境覆盖配置
+     └── Properties/
+         └── launchSettings.json          // IIS/Kestrel 启动配置文件
+   ```
+2. 日志配置 (通常在 `appsettings.json` 中配置MEL，或通过代码配置Serilog):
+   ```json
+   // appsettings.json 中的日志配置示例 (MEL)
+   {
+     "Logging": {
+       "LogLevel": {
+         "Default": "Information", // 默认日志级别
+         "Microsoft.AspNetCore": "Warning", // ASP.NET Core 相关日志级别设为警告
+         "Microsoft.EntityFrameworkCore.Database.Command": "Information" // 开发环境下记录EF Core命令
+       },
+       "Console": {
+         "FormatterName": "json", // 控制台输出格式为JSON (或 "simple" 简单文本)
+         "FormatterOptions": {
+           "SingleLine": true, // 是否单行输出
+           "IncludeScopes": true, // 是否包含日志作用域
+           "TimestampFormat": "yyyy-MM-ddTHH:mm:ss.fffZ ", // 时间戳格式
+           "JsonWriterOptions": {
+             "Indented": false // JSON是否缩进
+           }
+         }
+       }
+     },
+     // Serilog 配置示例 (如果使用 Serilog.Settings.Configuration)
+     "Serilog": {
+       "MinimumLevel": {
+         "Default": "Information",
+         "Override": {
+           "Microsoft": "Warning",
+           "System": "Warning"
+         }
+       },
+       "WriteTo": [
+         { "Name": "Console" }, // 输出到控制台
+         {
+           "Name": "File", // 输出到文件
+           "Args": {
+             "path": "Logs/applog-.txt", // 日志文件路径模板，按天滚动
+             "rollingInterval": "Day",   // 滚动间隔：天
+             "retainedFileCountLimit": 7,  // 保留文件数量
+             "outputTemplate": "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj} <s:{SourceContext}>{NewLine}{Exception}" // 输出模板
+           }
+         }
+       ],
+       "Enrich": [ "FromLogContext", "WithMachineName", "WithThreadId" ], // 增强器：日志上下文、机器名、线程ID
+       "Properties": {
+         "Application": "YourApplicationName" // 应用名称属性
+       }
+     }
+   }
+   ```
+
+## 三、分支管理与版本控制规范
+
+### 【强制】分支命名规范
+1. 主分支：`main` (推荐) 或 `master`
+2. 开发分支：`develop`
+3. 功能分支：`feature/{issue-tracker-id}-{kebab-case-description}` (e.g., `feature/PROJ-123-add-user-login`)
+4. 修复分支：`fix/{issue-tracker-id}-{kebab-case-description}` (e.g., `fix/PROJ-456-resolve-null-ref-in-orders`)
+   或 `hotfix/{version}-{short-description}` (for production hotfixes directly from main/master)
+5. 发布分支：`release/{version}` (e.g., `release/v1.2.0`)
+
+### 【强制】分支策略 (Gitflow-like, adaptable)
+1. `main` (or `master`) 分支:
+   - 代表生产环境的稳定代码。
+   - 只能从 `release` 分支或 `hotfix` 分支合并。
+   - 每次合并到 `main` 必须打上版本标签 (Tag)。
+2. `develop` 分支:
+   - 集成所有已完成功能和修复的开发代码，是下一个版本的基线。
+   - 功能分支 (`feature`) 从 `develop` 创建，完成后合并回 `develop`。
+   - `release` 分支从 `develop` 创建。
+3. `feature` 分支:
+   - 为开发新功能或进行较大改动而创建。
+   - 从 `develop` 分支创建。
+   - 开发完成后，通过Pull Request (PR) / Merge Request (MR) 合并回 `develop` 分支。
+   - 合并后通常删除。
+4. `fix` (or `bugfix`) 分支:
+   - 为修复在 `develop` 分支上发现的非紧急bug而创建。
+   - 从 `develop` 分支创建。
+   - 修复完成后，通过PR/MR合并回 `develop`。
+5. `hotfix` 分支:
+   - 为修复生产环境 (`main`/`master`) 的紧急bug而创建。
+   - 直接从 `main`/`master` 的对应版本标签创建。
+   - 完成后，必须合并回 `main`/`master` (并打新修订版标签) 和 `develop` (以及当前 `release` 分支，如果存在)。
+6. `release` 分支:
+   - 为准备新版本发布而创建 (版本冻结，只进行bug修复、文档生成等发布相关工作)。
+   - 从 `develop` 分支创建。
+   - 测试和修复完成后，合并到 `main`/`master` (打版本标签) 并同时合并回 `develop` (以包含修复)。
+   - 发布后可删除或保留。
+
+### 【强制】版本号格式 (Semantic Versioning 2.0.0 - SemVer)
+1. 格式：`MAJOR.MINOR.PATCH` (e.g., `1.2.3`)
+   - `MAJOR` 版本：当进行不兼容的API更改时递增。
+   - `MINOR` 版本：当以向后兼容的方式添加功能时递增。
+   - `PATCH` 版本：当进行向后兼容的错误修复时递增。
+2. 预发布版本号：可附加连字符和一系列点分隔的标识符 (e.g., `1.0.0-alpha.1`, `1.0.0-rc.2`)。
+3. 构建元数据：可附加加号和一系列点分隔的标识符 (e.g., `1.0.0-alpha+001`, `1.0.0+20130313144700`)。
+4. NuGet包版本应遵循此规范。
+
+### 【强制】版本发布流程
+1. 准备阶段 (在 `release` 分支):
+   - 从 `develop` 创建 `release/{version}` 分支。
+   - 更新项目版本号 (e.g., in `.csproj` files, `AssemblyInfo.cs` if used, or build scripts)。
+   - 更新CHANGELOG.md。
+2. 测试与稳定阶段 (在 `release` 分支):
+   - 进行完整的回归测试、QA测试、UAT。
+   - 只允许在该分支上进行bug修复。
+   - 更新API文档 (e.g., regenerate Swagger/OpenAPI specs), 用户手册等。
+3. 发布阶段:
+   - 将 `release/{version}` 分支合并到 `main`/`master`。
+   - **在 `main`/`master` 的合并提交上创建版本标签** (e.g., `git tag -a v1.2.0 -m "Release version 1.2.0"`)。
+   - 推送 `main`/`master` 和标签到远程仓库。
+   - 基于此标签构建生产部署包 (e.g., NuGet packages, Docker images)。
+   - 部署到生产环境。
+4. 完成阶段:
+   - 将 `release/{version}` 分支 (包含所有修复) 合并回 `develop` 分支。
+   - (可选) 删除 `release/{version}` 分支。
+   - 发布版本公告。
+
+### 【强制】Tag管理
+1. 命名规范：`vMAJOR.MINOR.PATCH` (e.g., `v1.2.3`)
+2. 标记要求：
+   - 必须是附注标签 (`git tag -a`) 以包含创建者、日期和消息。
+   - 标签消息应清晰说明发布的版本和关键内容 (e.g., "Release version 1.2.3 - Critical security fixes and performance improvements")。
+   - 必须关联到 `main`/`master` 分支上代表该发布的提交ID。
+3. 管理要求：
+   - 禁止删除或移动已发布的、推送到远程的标签。
+   - 及时将本地标签推送到远程仓库 (`git push origin --tags`)。
+
+### 【强制】依赖管理规范 (NuGet)
+1. 版本管理:
+   - **【推荐】使用中央包版本管理 (CPVM - Central Package Version Management)**: 在解决方案根目录的 `Directory.Packages.props` 文件中统一定义NuGet包版本。项目文件 (`.csproj`) 中只声明包ID，不指定版本。
+     ```xml
+     <!-- Directory.Packages.props -->
+     <Project>
+       <PropertyGroup>
+         <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>  <!-- 启用中央包版本管理 -->
+       </PropertyGroup>
+       <ItemGroup>
+         <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
+         <PackageVersion Include="Serilog.AspNetCore" Version="8.0.0" />
+         <!-- 在此定义所有解决方案级别的包版本 -->
+       </ItemGroup>
+     </Project>
+     ```
+     ```xml
+     <!-- MyProject.csproj (示例项目文件) -->
+     <ItemGroup>
+       <PackageReference Include="Newtonsoft.Json" /> <!-- 版本由 Directory.Packages.props 控制 -->
+       <PackageReference Include="Serilog.AspNetCore" />
+     </ItemGroup>
+     ```
+   - 如果不使用CPVM，应在解决方案层面（或共享的 `.props` 文件）尽量统一依赖版本，避免不同项目引用同一包的不同版本。
+   - 定期审查和更新NuGet包版本，关注安全漏洞 (e.g., using `dotnet list package --vulnerable`) 和重要修复。
+2. 依赖原则:
+   - 避免依赖冲突 (使用最新的兼容版本，或通过CPVM强制统一版本)。
+   - 避免循环依赖 (项目间)。
+   - 避免过度依赖不必要的包。
+   - 及时清理无用的NuGet包引用。
+   - **【推荐】** 使用 `dotnet list package` 和 Visual Studio 的包管理器UI分析依赖树，确保依赖的简洁和可控性。
+   - **【推荐】** 对于自己发布到内部NuGet源的库，严格遵循SemVer。
+
+
+
