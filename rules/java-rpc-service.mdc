@@ -19,7 +19,7 @@ alwaysApply: true
        //UserResp getUser(UserRpcReq req);
    }
    ```
-   (注意：此处的 Result 是指 `@com.hexonal.commons.base.Result`，其使用应遵循 `hexonal-error-handling-and-operations.mdc` 中关于统一响应体Result的规范。RPC的Req/Resp对象应定义在xxx-api模块。)
+   (注意：此处的 Result 是指 `@com.hexonal.commons.base.Result`，其使用应遵循 `@java-error-handling-and-operations.mdc` 中关于统一响应体Result的规范。RPC的Req/Resp对象应定义在xxx-api模块。)
 
 ### 【强制】接口实现规范
 1. 实现类命名：
@@ -48,9 +48,9 @@ alwaysApply: true
    - 优先使用 `final` 修饰依赖
    - 必须继承 `BaseRpcService` (其 `rpcResult` 方法应负责捕获来自 `userBizService` 的已知异常如 `BizException`、`SystemException`，并将其转换为 `Result` 对象中的code和message)。
    - 必须实现接口中所有方法
-   - 必须处理所有异常场景 (参考 `hexonal-error-handling-and-operations.mdc`)
-   - 必须添加方法注释 (参考 `hexonal-code-development-and-quality.mdc`)
-   - 必须进行参数校验 (参考 `hexonal-error-handling-and-operations.mdc`)
+   - 必须处理所有异常场景 (参考 `@java-error-handling-and-operations.mdc`)
+   - 必须添加方法注释 (参考 `@java-code-development-and-quality.mdc`)
+   - 必须进行参数校验 (参考 `@java-error-handling-and-operations.mdc`)
 
 ### 【强制】接口版本控制
 1. 接口升级原则：
@@ -72,7 +72,7 @@ alwaysApply: true
    - **【核心】** Dubbo的 `version` 属性是管理服务多版本的关键。避免在同一接口内通过不同方法名来表示同一业务操作的不同版本。
 
 ### 【强制】接口安全规范
-1. 参数校验： (参考 `hexonal-error-handling-and-operations.mdc` 中的参数校验规范)
+1. 参数校验： (参考 `@java-error-handling-and-operations.mdc` 中的参数校验规范)
    ```java
    public class UserRpcReq {
        @NotNull(message = "用户ID不能为空")
@@ -125,7 +125,7 @@ alwaysApply: true
    - 推荐继承 `BaseRpcService` (如果提供了 `parseResult` 等通用逻辑)
    - 必须实现接口中所有方法
    - 必须处理所有异常场景，特别是RPC调用异常 (例如 `RpcException` 或由 `BaseRpcService.parseResult` 抛出的自定义客户端业务异常)。处理逻辑应遵循 `@java-error-handling-and-operations.mdc`。
-   - 必须添加方法注释 (参考 `hexonal-code-development-and-quality.mdc`)
+   - 必须添加方法注释 (参考 `@java-code-development-and-quality.mdc`)
    - 可选进行调用方特有的参数校验
 
 ---

@@ -145,7 +145,7 @@ alwaysApply: true
    
    // 启动类 Application.java 通常放在顶层基础包下，例如 com.hexonal.myproject
    ```
-   *注：`com.hexonal` (或 `com.yp`) 为公司/集团顶级包名。示例中的 `myproject` 代表项目的核心标识，通常对应于父POM中 `groupId` 的最后一部分（例如，若父POM `groupId` 为 `com.hexonal.oms`，则 `myproject` 在包结构中对应 `oms`）。此项目核心标识应根据实际项目定名（如 `oms`, `ums`, `ht` 等）。示例中的 `order` 代表具体的业务模块，应替换为实际的模块名（如 `user`, `product` 等）。*
+   *注：`com.hexonal` (或 `com.hexonal`) 为公司/集团顶级包名。示例中的 `myproject` 代表项目的核心标识，通常对应于父POM中 `groupId` 的最后一部分（例如，若父POM `groupId` 为 `com.hexonal.oms`，则 `myproject` 在包结构中对应 `oms`）。此项目核心标识应根据实际项目定名（如 `oms`, `ums`, `ht` 等）。示例中的 `order` 代表具体的业务模块，应替换为实际的模块名（如 `user`, `product` 等）。*
 
 ### 【强制】资源文件规范
 1. 配置文件位置：
