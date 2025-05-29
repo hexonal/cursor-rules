@@ -1,8 +1,0 @@
-# tailscale-go-proxy 配置
-http_proxy_port: 8081
-socks5_proxy_port: 1080
-manage_api_port: 9091
-headscale_grpc_addr: "headscale:50443"
-headscale_http_addr: "headscale:8080"
-cache_update_interval: 5 # 秒
-status_check_interval: 10 # 秒
