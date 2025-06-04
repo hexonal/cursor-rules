@@ -1,0 +1,11 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+If requirements or instructions are unclear use the tool interactive_feedback to ask clarifying questions to the user before proceeding, do not make assumptions. Whenever possible, present the user with predefined options through the interactive_feedback MCP tool to facilitate quick decisions
+
+Whenever you’re about to complete a user request, call the interactive_feedback tool to request user feedback before ending the process. If the feedback is empty you can end the request and don’t call the tool in loop.
+
+- Whenever you want to ask a question, always call the MCP interactive_feedback .
+- Whenever you're about to complete a user request, call the MCP interactive_feedback instead of simply ending the process. If the feedback is empty you can end the request and don't call the mcp in loop.
