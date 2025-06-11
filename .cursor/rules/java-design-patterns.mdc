@@ -3,505 +3,1013 @@ description:
 globs: 
 alwaysApply: true
 ---
-# Java项目设计模式应用指南
+# Java项目设计模式精细化应用规范
 
-本指南旨在提供Java项目中常用设计模式的理解和应用场景，以提升代码的可维护性、可扩展性、可读性和团队整体的CR（Code Review）能力。设计模式的运用应与 `@java-code-development-and-quality.mdc`（特别是其中关于DDD和充血模型的指导）以及 `@java-project-architecture-and-structure.mdc` 紧密结合，共同促进高质量软件的交付。
+本规范提供精细化、明确的设计模式应用指导，通过Cursor代码库索引技术，基于项目现有模式提供具体的实现规范和约束规则。
 
-## 一、设计模式核心原则
+## 一、设计模式应用原则与约束
 
-在应用设计模式之前，应深刻理解以下核心设计原则，它们是设计模式的基础：
+### 【强制】设计模式引入条件
+1. **必须满足以下条件之一才可引入设计模式**：
+   ```
+   提示词：@codebase 分析这段代码是否满足设计模式引入条件：
+   1. 存在3个以上相似的实现类或方法
+   2. 业务逻辑存在明确的变化点和扩展需求
+   3. 现有if-else分支超过5个且逻辑复杂
+   4. 对象创建过程复杂且需要多步骤验证
+   5. 需要解耦具体实现与接口调用
+   ```
 
-1.  **单一职责原则 (SRP - Single Responsibility Principle)**：一个类应该只有一个引起它变化的原因。
-2.  **开闭原则 (OCP - Open/Closed Principle)**：软件实体（类、模块、函数等）应该对扩展开放，对修改关闭。
-3.  **里氏替换原则 (LSP - Liskov Substitution Principle)**：所有引用基类（父类）的地方必须能透明地使用其子类的对象。
-4.  **接口隔离原则 (ISP - Interface Segregation Principle)**：客户端不应该依赖它不需要的接口；一个类对另一个类的依赖应该建立在最小的接口上。
-5.  **依赖倒置原则 (DIP - Dependency Inversion Principle)**：高层模块不应该依赖低层模块，两者都应该依赖其抽象；抽象不应该依赖细节，细节应该依赖抽象。
+2. **禁止过度设计**：
+   - 禁止为了使用设计模式而设计模式
+   - 禁止在简单场景中引入复杂模式
+   - 禁止同时使用多个设计模式导致过度抽象
 
-**强调：设计模式是解决特定问题的成熟方案，但不是万能药。应避免过度设计，只有在确实能带来明确收益（如提高灵活性、降低耦合度、增强可读性）时才考虑引入。**
+### 【强制】设计模式命名规范
+1. **工厂类命名**：`业务名称 + Factory`
+   - 正确：`OrderFactory`、`UserFactory`、`PaymentFactory`
+   - 错误：`CreateOrder`、`OrderCreator`、`OrderBuilder`（Builder是另一种模式）
 
-## 二、常用设计模式及其在项目中的应用
+2. **策略类命名**：`具体策略描述 + Strategy`
+   - 正确：`FixedAmountDiscountStrategy`、`PercentageDiscountStrategy`
+   - 错误：`DiscountHandler`、`DiscountProcessor`、`DiscountService`
 
-以下设计模式在的Java项目中较为常用，尤其是在结合DDD思想进行开发时。
+3. **适配器类命名**：`外部系统名称 + Adapter`
+   - 正确：`AlipayPaymentAdapter`、`WechatPaymentAdapter`
+   - 错误：`PaymentIntegration`、`PaymentGateway`
 
-### 2.1 创建型模式
+## 二、工厂模式精细化规范
 
-#### 1. 工厂方法模式 (Factory Method)
-*   **意图**：定义一个用于创建对象的接口，让子类决定实例化哪一个类。工厂方法使一个类的实例化延迟到其子类。
-*   **应用场景**：
-    *   当一个类不知道它所必须创建的对象的类的时候。
-    *   当一个类希望由它的子类来指定它所创建的对象的时候。
-    *   在DDD中，复杂聚合根或实体的创建，特别是当创建过程涉及一些业务规则或需要依赖其他服务时，可以由专门的工厂类（`XxxFactory`）负责。例如，`OrderFactory` 可以根据不同的输入参数（如订单类型、促销活动）创建不同配置的 `Order` 实体。
-    *   **示例（结合DDD的实体创建）**：
-        ```java
-        // OrderFactory.java (位于 domain.model.order 或 domain.factory)
-        @Component // 如果需要注入依赖
-        public class OrderFactory {
-            private final ProductRepository productRepository; // 示例依赖
-            private final UserDiscountService userDiscountService; // 示例依赖
+### 【强制】工厂模式适用场景识别
+```
+提示词：@codebase 检查以下场景是否适合使用工厂模式：
+1. 对象创建需要5个以上参数
+2. 创建过程需要调用3个以上外部服务
+3. 创建逻辑包含复杂的业务规则校验
+4. 同一类型对象有3种以上创建方式
 
-            @Autowired
-            public OrderFactory(ProductRepository productRepository, UserDiscountService userDiscountService) {
-                this.productRepository = productRepository;
-                this.userDiscountService = userDiscountService;
-            }
-
-            public Order createNewOrder(CreateOrderReq dto, Long userId) {
-                // 复杂的创建逻辑，可能涉及校验、获取外部信息、应用规则等
-                List<OrderItem> items = dto.getItems().stream()
-                                          .map(itemDto -> {
-                                              ProductSnapshot product = productRepository.findProductSnapshotById(itemDto.getProductId());
-                                              if (product == null) throw new BizException(BizErrorCode.PRODUCT_NOT_FOUND);
-                                              return new OrderItem(product, itemDto.getQuantity());
-                                          })
-                                          .collect(Collectors.toList());
-                
-                Money initialTotal = calculateInitialTotal(items);
-                Discount applicableDiscount = userDiscountService.getApplicableDiscount(userId, initialTotal);
-                Money finalTotal = initialTotal.applyDiscount(applicableDiscount);
-
-                Order order = new Order(userId, items, finalTotal, dto.getShippingAddress());
-                order.generateOrderNumber(); // 实体自身行为
-                // order.applyInitialPromotions(); // 更多实体行为
-                return order;
-            }
-
-            private Money calculateInitialTotal(List<OrderItem> items) {
-                // ... 计算逻辑
-                return new Money(BigDecimal.ZERO, Currency.CNY); // 示例
-            }
-        }
-        ```
-
-#### 2. 抽象工厂模式 (Abstract Factory)
-*   **意图**：提供一个创建一系列相关或相互依赖对象的接口，而无需指定它们具体的类。
-*   **应用场景**：
-    *   当一个系统要独立于它的产品的创建、组合和表示时。
-    *   当一个系统要由多个产品系列中的一个来配置时。
-    *   当你要强调一系列相关的产品对象的设计以便进行联合使用时。
-    *   例如，如果系统支持多种UI主题（每种主题包含一套按钮、文本框等组件），或者支持多种持久化方案（每种方案有一套DAO实现）。
-
-#### 3.建造者模式 (Builder)
-*   **意图**：将一个复杂对象的构建与其表示分离，使得同样的构建过程可以创建不同的表示。
-*   **应用场景**：
-    *   当创建复杂对象的算法应该独立于该对象的组成部分以及它们的装配方式时。
-    *   当构造过程必须允许被构造的对象有不同的表示时。
-    *   尤其适用于创建具有多个可选参数或配置步骤的对象，避免构造函数参数过多或Setter方法状态不一致的问题。
-    *   在DTO或领域实体创建时，如果构造参数较多，可使用Lombok的 `@Builder` 注解或手写Builder。
-    *   **示例（领域实体或DTO）**：
-        ```java
-        // UserProfile.java (领域实体或值对象)
-        @Builder
-        @Getter
-        public class UserProfile {
-            private final String nickname;
-            private final String avatarUrl;
-            private final Gender gender;
-            private final LocalDate birthday;
-            private final String bio;
-            // ... 其他方法和业务逻辑
-        }
-
-        // 使用
-        UserProfile profile = UserProfile.builder()
-                                .nickname("FishPa")
-                                .avatarUrl("http://example.com/avatar.png")
-                                .gender(Gender.MALE)
-                                // bio 未设置则为null或默认值
-                                .build();
-        ```
-
-#### 4. 单例模式 (Singleton)
-*   **意图**：保证一个类仅有一个实例，并提供一个访问它的全局访问点。
-*   **应用场景**：
-    *   **谨慎使用**。在Spring框架管理下，Bean默认是单例的，通常不需要手动实现单例模式。
-    *   如果确实有全局唯一且无状态的组件不由Spring管理，可以考虑。但多数情况下，应优先考虑通过Spring的依赖注入来管理对象生命周期。
-
-### 2.2 结构型模式
-
-#### 1. 适配器模式 (Adapter)
-*   **意图**：将一个类的接口转换成客户希望的另外一个接口。适配器模式使得原本由于接口不兼容而不能一起工作的那些类可以一起工作。
-*   **应用场景**：
-    *   当你希望使用某些现有类，但其接口与其他代码不兼容时。
-    *   在DDD中，**防腐层 (Anti-Corruption Layer, ACL)** 的实现常采用适配器模式，用于隔离外部系统（如第三方API、旧系统）的变化对本限界上下文的影响。
-    *   例如，调用外部支付网关，其API可能与项目内部的支付服务接口不一致，可以创建一个 `PaymentGatewayAdapter` 来适配。
-    *   **示例（防腐层）**：
-        ```java
-        // 假设外部支付网关SDK接口
-        // public class ExternalPaymentSDK {
-        //     public SDKPaymentResponse initiatePayment(SDKPaymentRequest sdkRequest);
-        // }
-
-        // 项目内部统一的支付服务接口
-        public interface PaymentService {
-            PaymentResult makePayment(PaymentCommand command);
-        }
-
-        // 适配器实现
-        @Service
-        public class ExternalPaymentAdapter implements PaymentService {
-            private final ExternalPaymentSDK externalSdk; // 通过构造器注入
-
-            @Autowired
-            public ExternalPaymentAdapter(ExternalPaymentSDK externalSdk) {
-                this.externalSdk = externalSdk;
-            }
-
-            @Override
-            public PaymentResult makePayment(PaymentCommand command) {
-                SDKPaymentRequest sdkRequest = convertToSdkRequest(command); // 转换逻辑
-                SDKPaymentResponse sdkResponse = externalSdk.initiatePayment(sdkRequest);
-                return convertToPaymentResult(sdkResponse); // 转换逻辑
-            }
-
-            private SDKPaymentRequest convertToSdkRequest(PaymentCommand command) { /* ... */ return new SDKPaymentRequest(); }
-            private PaymentResult convertToPaymentResult(SDKPaymentResponse sdkResponse) { /* ... */ return new PaymentResult(); }
-        }
-        ```
-
-#### 2. 装饰器模式 (Decorator)
-*   **意图**：动态地给一个对象添加一些额外的职责。就增加功能来说，装饰器模式相比生成子类更为灵活。
-*   **应用场景**：
-    *   当你希望在无需修改代码夜空动态地向对象添加功能， 且不影响同类型的其他对象时。
-    *   当通过子类扩展不切实际或不可能时，例如由于子类的数量会呈爆炸性增长，或者类定义被隐藏或无法访问。
-    *   Java IO库中的 `BufferedInputStream(InputStream)` 就是一个典型例子。
-    *   在业务逻辑中，例如为某个基础服务添加缓存、日志、权限校验等功能，可以通过装饰器实现，但Spring AOP通常是更方便的选择。
-
-#### 3. 策略模式 (Strategy)
-*   **意图**：定义一系列的算法,把它们一个个封装起来, 并且使它们可相互替换。本模式使得算法可独立于使用它的客户而变化。
-*   **应用场景**：
-    *   当你有许多仅在行为上有所不同的相关类时。
-    *   当你需要使用一个算法的不同变体时。
-    *   当你希望在运行时根据具体情况选择算法时。
-    *   在DDD中，如果一个实体或领域服务有多种处理方式（例如，订单有多种优惠计算策略、用户有多种通知发送策略），策略模式非常适用。
-    *   **示例（订单优惠计算）**：
-        ```java
-        // 策略接口
-        public interface DiscountStrategy {
-            Money applyDiscount(Order order, Money currentTotal);
-        }
-
-        // 具体策略实现
-        @Component("滿减策略")
-        public class FixedAmountDiscountStrategy implements DiscountStrategy {
-            @Override
-            public Money applyDiscount(Order order, Money currentTotal) {
-                if (currentTotal.isGreaterThan(new Money(100, Currency.CNY))) {
-                    return currentTotal.subtract(new Money(10, Currency.CNY));
-                }
-                return currentTotal;
-            }
-        }
-        @Component("折扣策略")
-        public class PercentageDiscountStrategy implements DiscountStrategy {
-            private final BigDecimal discountRate = new BigDecimal("0.9"); // 9折
-            @Override
-            public Money applyDiscount(Order order, Money currentTotal) {
-                return currentTotal.multiply(discountRate);
-            }
-        }
-
-        // 使用策略的领域服务或应用服务
-        @Service
-        public class OrderPricingService {
-            private final Map<String, DiscountStrategy> discountStrategies; // 注入所有策略
-
-            @Autowired
-            public OrderPricingService(List<DiscountStrategy> strategies) {
-                this.discountStrategies = strategies.stream()
-                    .collect(Collectors.toMap(
-                        s -> s.getClass().getAnnotation(Component.class).value(), // 或者其他方式获取策略名称
-                        s -> s
-                    ));
-            }
-
-            public Money calculateFinalPrice(Order order, String selectedStrategyName) {
-                DiscountStrategy strategy = discountStrategies.get(selectedStrategyName);
-                if (strategy == null) {
-                    throw new IllegalArgumentException("Unsupported discount strategy: " + selectedStrategyName);
-                }
-                // 假设order.calculateProvisionalTotal() 返回一个Money对象
-                return strategy.applyDiscount(order, order.calculateProvisionalTotal());
-            }
-        }
-        ```
-
-#### 4. 模板方法模式 (Template Method)
-*   **意图**：定义一个操作中的算法的骨架，而将一些步骤延迟到子类中。模板方法使得子类可以不改变一个算法的结构即可重定义该算法的某些特定步骤。
-*   **应用场景**：
-    *   当你想让客户端只扩展算法的特定步骤， 而不是整个算法或其结构时。
-    *   当多个类中包含相似的算法， 但其部分步骤有所不同， 你希望避免代码重复时。
-    *   例如，通用的数据处理流程，其中数据读取、解析、校验、存储等步骤是固定的，但具体实现可能不同。`BaseRpcService` 中的 `rpcResult` 或 `parseResult` 方法可以看作是模板方法的应用。
-    *   **示例（通用数据导入流程）**：
-        ```java
-        public abstract class AbstractDataImporter {
-            // 模板方法
-            public final void importData(String filePath) {
-                DataSource source = openSource(filePath);
-                List<RawData> rawItems = readData(source);
-                List<ValidatedData> validatedItems = validateData(rawItems);
-                List<DomainObject> domainObjects = convertToDomainObjects(validatedItems);
-                saveDomainObjects(domainObjects);
-                closeSource(source);
-                postImportHook(domainObjects.size());
-            }
-
-            // 抽象方法，由子类实现
-            protected abstract DataSource openSource(String path);
-            protected abstract List<RawData> readData(DataSource source);
-            protected abstract List<ValidatedData> validateData(List<RawData> rawItems);
-            protected abstract List<DomainObject> convertToDomainObjects(List<ValidatedData> validatedItems);
-            protected abstract void saveDomainObjects(List<DomainObject> domainObjects);
-            protected abstract void closeSource(DataSource source);
-            
-            // 钩子方法，子类可选择性覆盖
-            protected void postImportHook(int itemCount) {
-                log.info("{} items imported successfully.", itemCount);
-            }
-        }
-
-        // 具体实现类
-        public class UserCsvImporter extends AbstractDataImporter {
-            // ... 实现所有抽象方法 ...
-            @Override
-            protected List<RawData> readData(DataSource source) {
-                // CSV specific reading logic
-                return Collections.emptyList();
-            }
-            // ...
-        }
-        ```
-
-### 2.3 行为型模式
-
-#### 1. 责任链模式 (Chain of Responsibility)
-*   **意图**：避免请求发送者与接收者耦合在一起，让多个对象都有可能接收请求。将这些对象连接成一条链，并且沿着这条链传递请求，直到有对象处理它为止。
-*   **应用场景**：
-    *   当你的程序需要使用不同方式处理不同种类请求， 而且请求类型和顺序预先未知时。
-    *   当你需要依次运行多个处理器， 或在运行时确定顺序时。
-    *   例如，审批流程、过滤器链（Servlet Filters, Spring Interceptors）、复杂的优惠券叠加规则。
-    *   **示例（优惠券处理链）**：
-        ```java
-        // 处理者接口
-        public abstract class CouponHandler {
-            protected CouponHandler nextHandler;
-
-            public void setNextHandler(CouponHandler nextHandler) {
-                this.nextHandler = nextHandler;
-            }
-
-            public abstract void apply(OrderContext orderContext);
-        }
-
-        // 具体处理者
-        public class ProductDiscountCouponHandler extends CouponHandler {
-            @Override
-            public void apply(OrderContext orderContext) {
-                if (canHandle(orderContext.getCurrentCoupon())) {
-                    // 应用商品折扣券逻辑
-                    orderContext.addAppliedDiscount("Product Discount Applied");
-                }
-                if (nextHandler != null) {
-                    nextHandler.apply(orderContext);
-                }
-            }
-            private boolean canHandle(Coupon coupon) { return coupon.getType() == CouponType.PRODUCT_DISCOUNT; }
-        }
-
-        public class ShippingFeeCouponHandler extends CouponHandler {
-            @Override
-            public void apply(OrderContext orderContext) {
-                if (canHandle(orderContext.getCurrentCoupon())) {
-                    // 应用运费券逻辑
-                    orderContext.addAppliedDiscount("Shipping Fee Waived");
-                }
-                if (nextHandler != null) {
-                    nextHandler.apply(orderContext);
-                }
-            }
-             private boolean canHandle(Coupon coupon) { return coupon.getType() == CouponType.SHIPPING_FEE; }
-        }
-        
-        // OrderContext.java (持有订单信息和当前处理状态)
-        // Coupon.java (优惠券信息)
-        // CouponType.java (枚举)
-
-        // 使用
-        // CouponHandler productHandler = new ProductDiscountCouponHandler();
-        // CouponHandler shippingHandler = new ShippingFeeCouponHandler();
-        // productHandler.setNextHandler(shippingHandler);
-        // productHandler.apply(orderContext); // 传入包含待处理优惠券的订单上下文
-        ```
-
-#### 2. 观察者模式 (Observer)
-*   **意图**：定义对象间的一种一对多的依赖关系，当一个对象的状态发生改变时，所有依赖于它的对象都得到通知并被自动更新。
-*   **应用场景**：
-    *   当一个对象的改变需要同时改变其他对象， 而不知道具体有多少对象有待改变。
-    *   当一个对象必须通知其他对象， 但它又不能对这些对象做出任何假设。换言之， 你不希望这些对象是紧密耦合的。
-    *   在DDD中，**领域事件 (Domain Event)** 的发布与订阅机制是观察者模式的典型应用。当聚合根状态发生重要变化时，可以发布一个领域事件，其他关心此事件的限界上下文或模块可以订阅并处理。
-    *   Spring框架提供了 `ApplicationEventPublisher` 和 `@EventListener` 来简化事件处理。
-    *   **示例（订单支付成功事件）**：
-        ```java
-        // 领域事件 (POJO)
-        @Getter
-        public class OrderPaidEvent extends ApplicationEvent {
-            private final Long orderId;
-            private final Money amountPaid;
-
-            public OrderPaidEvent(Object source, Long orderId, Money amountPaid) {
-                super(source);
-                this.orderId = orderId;
-                this.amountPaid = amountPaid;
-            }
-        }
-
-        // 事件发布方 (通常在应用服务或领域实体方法中)
-        @Service
-        public class OrderApplicationService {
-            private final ApplicationEventPublisher eventPublisher;
-            // ...
-            @Autowired
-            public OrderApplicationService(ApplicationEventPublisher eventPublisher /*...other deps */) {
-                this.eventPublisher = eventPublisher;
-            }
-
-            @Transactional
-            public void confirmOrderPayment(Long orderId, Money paymentAmount) {
-                Order order = orderRepository.findById(orderId);
-                order.confirmPayment(paymentAmount); // 实体行为
-                orderRepository.save(order);
-
-                // 发布领域事件
-                eventPublisher.publishEvent(new OrderPaidEvent(this, orderId, paymentAmount));
-                log.info("OrderPaidEvent published for orderId: {}", orderId);
-            }
-        }
-
-        // 事件监听器/订阅方 (可以有多个，处理不同后续逻辑)
-        @Component
-        public class NotificationService {
-            @EventListener
-            public void handleOrderPaidEvent(OrderPaidEvent event) {
-                log.info("Received OrderPaidEvent for order {}. Sending payment confirmation notification...", event.getOrderId());
-                // 发送通知逻辑
-            }
-        }
-
-        @Component
-        public class InventoryService {
-            @EventListener
-            public void handleOrderPaidEventForInventory(OrderPaidEvent event) {
-                log.info("Received OrderPaidEvent for order {}. Updating inventory...", event.getOrderId());
-                // 更新库存逻辑
-            }
-        }
-        ```
-
-#### 3. 状态模式 (State)
-*   **意图**：允许一个对象在其内部状态改变时改变它的行为。对象看起来似乎修改了它的类。
-*   **应用场景**：
-    *   当一个对象的行为取决于它的状态，并且它必须在运行时根据状态改变它的行为时。
-    *   当一个操作中含有庞大的多分支的条件语句，且这些分支依赖于该对象的状态时。通常，状态模式建议将每个分支放入独立的类中。
-    *   在DDD中，如果一个实体有复杂的生命周期和状态转换，且不同状态下行为差异显著，可以使用状态模式。
-    *   例如，订单状态（待支付、已支付、已发货、已完成、已取消）及其对应的操作。
-    *   **示例（订单状态机）**：
-        ```java
-        // 状态接口
-        public interface OrderState {
-            void pay(OrderContext order);       // 支付
-            void ship(OrderContext order);      // 发货
-            void confirmReceipt(OrderContext order); // 确认收货
-            void cancel(OrderContext order);    // 取消
-            OrderStatus getStatus();
-        }
-
-        // 具体状态类
-        public class PendingPaymentState implements OrderState {
-            @Override
-            public void pay(OrderContext order) {
-                System.out.println("Order paid. Changing state to PROCESSING.");
-                order.changeState(new ProcessingState());
-                // 实际应用中会调用order.setPaymentDetails()等
-            }
-            @Override public void ship(OrderContext order) { throw new IllegalStateException("Cannot ship an unpaid order."); }
-            @Override public void confirmReceipt(OrderContext order) { throw new IllegalStateException("Cannot confirm receipt for an unpaid order."); }
-            @Override public void cancel(OrderContext order) { /* ... */ order.changeState(new CancelledState()); }
-            @Override public OrderStatus getStatus() { return OrderStatus.PENDING_PAYMENT; }
-        }
-        // ProcessingState, ShippedState, CompletedState, CancelledState ...
-
-        // 上下文类 (通常是领域实体 Order)
-        public class OrderContext { // 在DDD中这通常是 Order 实体自身
-            private OrderState currentState;
-            private Long id;
-            // ... 其他订单属性
-
-            public OrderContext(Long id) {
-                this.id = id;
-                this.currentState = new PendingPaymentState(); // 初始状态
-            }
-
-            public void changeState(OrderState newState) {
-                this.currentState = newState;
-                // 持久化状态变更，发布领域事件等
-                System.out.println("Order " + id + " state changed to: " + newState.getStatus());
-            }
-
-            public void pay() { currentState.pay(this); }
-            public void ship() { currentState.ship(this); }
-            public void confirmReceipt() { currentState.confirmReceipt(this); }
-            public void cancel() { currentState.cancel(this); }
-            public OrderStatus getCurrentStatus() { return currentState.getStatus(); }
-        }
-
-        // OrderStatus.java (枚举: PENDING_PAYMENT, PROCESSING, SHIPPED, COMPLETED, CANCELLED)
-        ```
-
-## 三、Mermaid图示在设计文档中的应用
-
-根据 `@tech-solution-doc-spec.mdc` 的要求，所有技术方案中的架构图、流程图、时序图、状态图、类图、ER图等，均推荐使用 Mermaid 语法绘制。
-
-*   **流程图 (`graph TD` 或 `flowchart TD`)**: 描述业务流程、决策逻辑。
-*   **时序图 (`sequenceDiagram`)**: 展示对象间的交互和消息顺序，非常适合描述API调用、模块协作。
-*   **状态图 (`stateDiagram-v2`)**: 描述对象生命周期中的状态及转换，契合状态模式。
-*   **类图 (`classDiagram`)**: 展示类及其关系，适合描绘设计模式的结构或领域模型。
-*   **ER图 (`erDiagram`)**: 数据库设计。
-
-在应用设计模式时，通过Mermaid绘制相应的类图或时序图，可以非常清晰地表达模式的结构和参与者之间的协作关系，有助于团队理解和评审。
-
-**例如，策略模式的类图：**
-```mermaid
-classDiagram
-    OrderPricingService ..> DiscountStrategy : uses
-    DiscountStrategy <|.. FixedAmountDiscountStrategy
-    DiscountStrategy <|.. PercentageDiscountStrategy
-    class OrderPricingService {
-        +calculateFinalPrice(Order order, String strategyName) Money
-    }
-    class DiscountStrategy {
-        <<Interface>>
-        +applyDiscount(Order order, Money currentTotal) Money
-    }
-    class FixedAmountDiscountStrategy {
-        +applyDiscount(Order order, Money currentTotal) Money
-    }
-    class PercentageDiscountStrategy {
-        +applyDiscount(Order order, Money currentTotal) Money
-    }
+如果满足2个以上条件，推荐使用工厂模式
 ```
 
-## 四、AI辅助设计模式应用与规范检查
+### 【强制】工厂模式实现规范
+1. **工厂类结构规范**：
+   ```java
+   // 基于项目现有工厂模式分析
+   // 提示词：@codebase 分析现有Factory类，确保新工厂遵循相同结构
+   
+   @Component  // 必须使用Spring管理
+   @RequiredArgsConstructor  // 必须使用构造器注入
+   public class OrderFactory {
+       
+       // 【强制】依赖注入 - 必须为final
+       private final ProductRepository productRepository;
+       private final PricingService pricingService;
+       
+       // 【强制】主要创建方法命名规范：create + 对象名
+       public Order createOrder(CreateOrderCommand command) {
+           // 【强制】方法结构必须包含以下步骤：
+           validateCommand(command);           // 1. 参数校验
+           List<OrderItem> items = createOrderItems(command.getItems());  // 2. 子对象创建
+           Money totalAmount = calculateTotal(items);  // 3. 业务计算
+           return buildOrder(command, items, totalAmount);  // 4. 对象组装
+       }
+       
+       // 【强制】私有方法必须按职责分离
+       private void validateCommand(CreateOrderCommand command) {
+           if (command == null || command.getUserId() == null) {
+               throw new ProjectBizException(ErrorCode.INVALID_PARAMETER, "订单创建参数不能为空");
+           }
+           // 具体校验逻辑
+       }
+       
+       private List<OrderItem> createOrderItems(List<CreateOrderItemCommand> itemCommands) {
+           return itemCommands.stream()
+                   .map(this::createSingleOrderItem)
+                   .collect(Collectors.toList());
+       }
+       
+       private OrderItem createSingleOrderItem(CreateOrderItemCommand itemCommand) {
+           Product product = productRepository.findById(itemCommand.getProductId())
+                   .orElseThrow(() -> new ProjectBizException(ErrorCode.PRODUCT_NOT_FOUND));
+           return new OrderItem(product, itemCommand.getQuantity());
+       }
+       
+       private Money calculateTotal(List<OrderItem> items) {
+           return pricingService.calculateTotalPrice(items);
+       }
+       
+       private Order buildOrder(CreateOrderCommand command, List<OrderItem> items, Money totalAmount) {
+           return Order.builder()
+                   .userId(command.getUserId())
+                   .items(items)
+                   .totalAmount(totalAmount)
+                   .status(OrderStatus.PENDING_PAYMENT)
+                   .build();
+       }
+   }
+   ```
 
-1.  **模式识别与推荐**：
-    *   向AI描述遇到的设计问题或代码中的"坏味道"（如大量if-else判断状态、对象创建复杂等），询问是否有适用的设计模式。
-    *   例如："我有一个方法，根据用户的不同类型执行不同的计算逻辑，目前用了大量if-else，有什么设计模式可以优化吗？" (AI可能推荐策略模式或工厂模式)。
-2.  **模式结构生成**：
-    *   一旦确定使用某种设计模式，可以要求AI生成该模式的基本结构代码（接口、抽象类、具体实现类骨架），并遵循 `@java-code-development-and-quality.mdc` 的命名和注释规范。
-3.  **场景适配分析**：
-    *   与AI讨论特定设计模式在当前业务场景下的优缺点、适用性以及可能遇到的问题。
-4.  **规范符合性检查**：
-    *   提供一段应用了某种设计模式的代码，询问其是否符合本设计模式指南 (`@java-design-patterns.mdc`) 的推荐做法，或者是否遵循了相关的SOLID原则。
-5.  **Mermaid图表辅助**：
-    *   描述了设计模式的参与者和关系后，可以请求AI生成对应的Mermaid类图或时序图草稿。
+2. **工厂方法返回值规范**：
+   - 【强制】必须返回领域对象，不能返回DTO
+   - 【强制】返回对象必须是完整的、可用的业务对象
+   - 【强制】不能返回半成品对象，需要调用者继续组装
+
+## 三、策略模式精细化规范
+
+### 【强制】策略模式适用场景识别
+```
+提示词：@codebase 检查以下场景是否适合使用策略模式：
+1. 同一个业务行为有3种以上不同算法实现
+2. 算法选择逻辑复杂，包含多层if-else判断
+3. 不同算法的输入输出格式一致
+4. 算法需要在运行时动态选择
+
+如果满足3个以上条件，必须使用策略模式
+```
+
+### 【强制】策略模式实现规范
+1. **策略接口设计规范**：
+   ```java
+   // 【强制】策略接口命名：业务行为 + Strategy
+   public interface DiscountStrategy {
+       
+       // 【强制】方法命名：动词 + 业务对象
+       Money calculateDiscount(Order order, DiscountContext context);
+       
+       // 【强制】必须提供策略标识方法
+       String getStrategyType();
+       
+       // 【强制】必须提供适用性检查方法
+       boolean isApplicable(Order order, DiscountContext context);
+   }
+   ```
+
+2. **策略实现类规范**：
+   ```java
+   // 【强制】实现类命名：具体策略名 + Strategy
+   @Component
+   public class FixedAmountDiscountStrategy implements DiscountStrategy {
+       
+       // 【强制】策略类型常量
+       public static final String STRATEGY_TYPE = "FIXED_AMOUNT";
+       
+       @Override
+       public Money calculateDiscount(Order order, DiscountContext context) {
+           // 【强制】必须先检查适用性
+           if (!isApplicable(order, context)) {
+               return Money.ZERO;
+           }
+           
+           // 【强制】具体算法实现，必须包含业务规则校验
+           BigDecimal orderAmount = order.getTotalAmount().getAmount();
+           BigDecimal discountAmount = context.getDiscountAmount();
+           
+           if (orderAmount.compareTo(context.getMinOrderAmount()) < 0) {
+               throw new ProjectBizException(ErrorCode.DISCOUNT_NOT_APPLICABLE, 
+                   "订单金额不满足满减条件");
+           }
+           
+           return new Money(discountAmount, order.getTotalAmount().getCurrency());
+       }
+       
+       @Override
+       public String getStrategyType() {
+           return STRATEGY_TYPE;
+       }
+       
+       @Override
+       public boolean isApplicable(Order order, DiscountContext context) {
+           return STRATEGY_TYPE.equals(context.getDiscountType()) 
+               && order.getTotalAmount().getAmount().compareTo(context.getMinOrderAmount()) >= 0;
+       }
+   }
+   ```
+
+3. **策略管理器规范**：
+   ```java
+   @Service
+   @RequiredArgsConstructor
+   public class DiscountStrategyManager {
+       
+       // 【强制】使用Map管理策略，key为策略类型
+       private final Map<String, DiscountStrategy> strategies;
+       
+       // 【强制】构造器中初始化策略映射
+       public DiscountStrategyManager(List<DiscountStrategy> strategyList) {
+           this.strategies = strategyList.stream()
+                   .collect(Collectors.toMap(
+                       DiscountStrategy::getStrategyType,
+                       Function.identity()
+                   ));
+       }
+       
+       // 【强制】策略选择方法
+       public Money applyDiscount(Order order, DiscountContext context) {
+           DiscountStrategy strategy = strategies.get(context.getDiscountType());
+           if (strategy == null) {
+               throw new ProjectBizException(ErrorCode.UNSUPPORTED_DISCOUNT_TYPE, 
+                   "不支持的优惠类型: " + context.getDiscountType());
+           }
+           
+           return strategy.calculateDiscount(order, context);
+       }
+   }
+   ```
+
+## 四、适配器模式精细化规范
+
+### 【强制】适配器模式适用场景
+```
+提示词：@codebase 检查以下场景是否需要使用适配器模式：
+1. 集成第三方系统，接口格式不匹配
+2. 新老系统对接，数据结构差异较大
+3. 多个外部服务提供相同功能但接口不同
+4. 需要统一多种数据源的访问方式
+
+如果存在以上场景，必须使用适配器模式
+```
+
+### 【强制】适配器实现规范
+1. **适配器接口定义**：
+   ```java
+   // 【强制】内部统一接口，遵循项目业务命名
+   public interface PaymentService {
+       PaymentResult pay(PaymentRequest request);
+       PaymentStatus queryPaymentStatus(String orderId);
+       RefundResult refund(RefundRequest request);
+   }
+   ```
+
+2. **适配器实现类**：
+   ```java
+   @Service("alipayAdapter")  // 【强制】必须指定Bean名称
+   @RequiredArgsConstructor
+   public class AlipayPaymentAdapter implements PaymentService {
+       
+       private final AlipayClient alipayClient;  // 第三方SDK
+       
+       @Override
+       public PaymentResult pay(PaymentRequest request) {
+           try {
+               // 【强制】第一步：参数校验
+               validatePaymentRequest(request);
+               
+               // 【强制】第二步：数据转换
+               AlipayTradeAppPayRequest alipayRequest = convertToAlipayRequest(request);
+               
+               // 【强制】第三步：调用第三方接口
+               AlipayTradeAppPayResponse alipayResponse = alipayClient.execute(alipayRequest);
+               
+               // 【强制】第四步：结果转换
+               return convertToPaymentResult(alipayResponse, request);
+               
+           } catch (AlipayApiException e) {
+               // 【强制】必须转换为项目内部异常
+               log.error("支付宝支付调用失败，订单号：{}", request.getOrderId(), e);
+               throw new ProjectBizException(ErrorCode.THIRD_PARTY_PAYMENT_FAILED, 
+                   "支付宝支付失败: " + e.getErrMsg(), e);
+           }
+       }
+       
+       // 【强制】参数校验方法
+       private void validatePaymentRequest(PaymentRequest request) {
+           if (request == null || StringUtils.isBlank(request.getOrderId())) {
+               throw new ProjectBizException(ErrorCode.INVALID_PARAMETER, "支付请求参数无效");
+           }
+           if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+               throw new ProjectBizException(ErrorCode.INVALID_PARAMETER, "支付金额无效");
+           }
+       }
+       
+       // 【强制】请求转换方法
+       private AlipayTradeAppPayRequest convertToAlipayRequest(PaymentRequest request) {
+           AlipayTradeAppPayModel model = new AlipayTradeAppPayModel();
+           model.setOutTradeNo(request.getOrderId());
+           model.setSubject(request.getSubject());
+           model.setTotalAmount(request.getAmount().toString());
+           model.setProductCode("QUICK_MSECURITY_PAY");
+           
+           AlipayTradeAppPayRequest alipayRequest = new AlipayTradeAppPayRequest();
+           alipayRequest.setBizModel(model);
+           alipayRequest.setNotifyUrl(request.getNotifyUrl());
+           
+           return alipayRequest;
+       }
+       
+       // 【强制】响应转换方法
+       private PaymentResult convertToPaymentResult(AlipayTradeAppPayResponse response, PaymentRequest request) {
+           if (!response.isSuccess()) {
+               throw new ProjectBizException(ErrorCode.THIRD_PARTY_PAYMENT_FAILED, 
+                   "支付宝返回失败: " + response.getSubMsg());
+           }
+           
+           return PaymentResult.builder()
+                   .orderId(request.getOrderId())
+                   .paymentId(response.getTradeNo())
+                   .status(PaymentStatus.SUCCESS)
+                   .paymentData(response.getBody())
+                   .build();
+       }
+   }
+   ```
+
+## 五、建造者模式精细化规范
+
+### 【强制】建造者模式适用场景
+```
+提示词：@codebase 检查对象创建是否需要建造者模式：
+1. 构造参数超过5个
+2. 有多个可选参数组合
+3. 对象创建需要多个步骤且顺序重要
+4. 需要创建不同配置的同类对象
+
+如果满足2个以上条件，推荐使用建造者模式
+```
+
+### 【强制】建造者实现规范
+1. **Lombok Builder使用规范**：
+   ```java
+   @Data
+   @Builder
+   @NoArgsConstructor
+   @AllArgsConstructor(access = AccessLevel.PRIVATE)  // 【强制】私有构造器
+   public class UserProfile {
+       
+       // 【强制】必填字段不能有默认值
+       @NonNull
+       private Long userId;
+       
+       @NonNull
+       private String username;
+       
+       // 【强制】可选字段必须有默认值
+       @Builder.Default
+       private String nickname = "";
+       
+       @Builder.Default
+       private String avatar = "default_avatar.png";
+       
+       @Builder.Default
+       private UserStatus status = UserStatus.ACTIVE;
+       
+       // 【强制】自定义Builder方法用于复杂校验
+       public static class UserProfileBuilder {
+           public UserProfileBuilder withValidatedEmail(String email) {
+               if (!EmailValidator.isValid(email)) {
+                   throw new ProjectBizException(ErrorCode.INVALID_EMAIL_FORMAT);
+               }
+               this.email = email;
+               return this;
+           }
+           
+           public UserProfile build() {
+               // 【强制】构建前最终校验
+               if (userId == null || username == null) {
+                   throw new ProjectBizException(ErrorCode.REQUIRED_FIELD_MISSING, 
+                       "用户ID和用户名为必填字段");
+               }
+               return new UserProfile(userId, username, nickname, avatar, status);
+           }
+       }
+   }
+   ```
+
+## 六、观察者模式精细化规范
+
+### 【强制】观察者模式实现规范
+1. **事件定义规范**：
+   ```java
+   // 【强制】事件类命名：业务对象 + 业务动作 + Event
+   @Data
+   @AllArgsConstructor
+   public class OrderPaymentSuccessEvent {
+       
+       // 【强制】必须包含业务标识
+       private final Long orderId;
+       private final Long userId;
+       
+       // 【强制】必须包含时间戳
+       private final LocalDateTime occurredAt;
+       
+       // 【强制】必须包含业务数据
+       private final Money paymentAmount;
+       private final String paymentMethod;
+       
+       // 【强制】可选的上下文信息
+       private final Map<String, Object> eventContext;
+   }
+   ```
+
+2. **事件发布规范**：
+   ```java
+   @Service
+   @RequiredArgsConstructor
+   public class PaymentServiceImpl implements PaymentService {
+       
+       private final ApplicationEventPublisher eventPublisher;
+       
+       @Transactional(rollbackFor = Exception.class)
+       public void processPayment(PaymentCommand command) {
+           // 业务处理...
+           
+           // 【强制】事件发布必须在事务提交前
+           OrderPaymentSuccessEvent event = new OrderPaymentSuccessEvent(
+               command.getOrderId(),
+               command.getUserId(),
+               LocalDateTime.now(),
+               command.getAmount(),
+               command.getPaymentMethod(),
+               buildEventContext(command)
+           );
+           
+           eventPublisher.publishEvent(event);
+           
+           log.info("支付成功事件已发布，订单号：{}", command.getOrderId());
+       }
+       
+       private Map<String, Object> buildEventContext(PaymentCommand command) {
+           Map<String, Object> context = new HashMap<>();
+           context.put("source", "PaymentService");
+           context.put("version", "1.0");
+           return context;
+       }
+   }
+   ```
+
+3. **事件监听规范**：
+   ```java
+   @Component
+   @Slf4j
+   public class OrderStatusEventListener {
+       
+       @EventListener
+       @Async("eventTaskExecutor")  // 【强制】异步处理，指定线程池
+       @Transactional(propagation = Propagation.REQUIRES_NEW)  // 【强制】新事务
+       public void handlePaymentSuccess(OrderPaymentSuccessEvent event) {
+           try {
+               // 【强制】记录事件处理开始
+               log.info("处理支付成功事件，订单号：{}", event.getOrderId());
+               
+               // 具体业务处理
+               updateOrderStatus(event.getOrderId(), OrderStatus.PAID);
+               sendPaymentNotification(event.getUserId(), event.getOrderId());
+               
+               // 【强制】记录事件处理完成
+               log.info("支付成功事件处理完成，订单号：{}", event.getOrderId());
+               
+           } catch (Exception e) {
+               // 【强制】异常处理和日志记录
+               log.error("处理支付成功事件失败，订单号：{}", event.getOrderId(), e);
+               // 【强制】不能抛出异常，避免影响其他监听器
+           }
+       }
+       
+       private void updateOrderStatus(Long orderId, OrderStatus status) {
+           // 具体实现
+       }
+       
+       private void sendPaymentNotification(Long userId, Long orderId) {
+           // 具体实现
+       }
+   }
+   ```
+
+## 七、模板方法模式精细化规范
+
+### 【强制】模板方法模式适用场景
+```
+提示词：@codebase 检查以下场景是否适合使用模板方法模式：
+1. 多个类有相同的处理流程但某些步骤实现不同
+2. 需要控制子类的扩展点
+3. 有明确的算法骨架且步骤顺序固定
+4. 希望避免代码重复
+
+如果满足3个以上条件，必须使用模板方法模式
+```
+
+### 【强制】模板方法实现规范
+1. **抽象模板类规范**：
+   ```java
+   // 【强制】抽象类命名：Abstract + 业务名称 + Template
+   public abstract class AbstractDataProcessorTemplate {
+       
+       // 【强制】模板方法必须为final，不允许子类重写
+       public final ProcessResult processData(DataInput input) {
+           // 【强制】固定的处理流程
+           validateInput(input);                    // 1. 输入校验
+           RawData rawData = extractData(input);    // 2. 数据提取（抽象）
+           CleanData cleanData = cleanData(rawData); // 3. 数据清洗（抽象）
+           ProcessedData processedData = transformData(cleanData); // 4. 数据转换（抽象）
+           ProcessResult result = saveData(processedData); // 5. 数据保存（抽象）
+           afterProcess(result);                    // 6. 后置处理（钩子方法）
+           return result;
+       }
+       
+       // 【强制】通用步骤在父类实现
+       private void validateInput(DataInput input) {
+           if (input == null || input.getData() == null) {
+               throw new ProjectBizException(ErrorCode.INVALID_INPUT, "输入数据不能为空");
+           }
+       }
+       
+       // 【强制】抽象方法：子类必须实现的步骤
+       protected abstract RawData extractData(DataInput input);
+       protected abstract CleanData cleanData(RawData rawData);
+       protected abstract ProcessedData transformData(CleanData cleanData);
+       protected abstract ProcessResult saveData(ProcessedData processedData);
+       
+       // 【强制】钩子方法：子类可选择实现
+       protected void afterProcess(ProcessResult result) {
+           log.info("数据处理完成，处理结果：{}", result.getStatus());
+       }
+   }
+   ```
+
+2. **具体实现类规范**：
+   ```java
+   @Component
+   public class CsvDataProcessor extends AbstractDataProcessorTemplate {
+       
+       @Override
+       protected RawData extractData(DataInput input) {
+           // 【强制】必须包含具体实现逻辑
+           if (!(input instanceof CsvDataInput)) {
+               throw new ProjectBizException(ErrorCode.UNSUPPORTED_INPUT_TYPE, 
+                   "CSV处理器只支持CSV输入");
+           }
+           
+           CsvDataInput csvInput = (CsvDataInput) input;
+           return csvParser.parse(csvInput.getFilePath());
+       }
+       
+       @Override
+       protected CleanData cleanData(RawData rawData) {
+           // CSV特定的数据清洗逻辑
+           return csvDataCleaner.clean(rawData);
+       }
+       
+       // 其他抽象方法实现...
+   }
+   ```
+
+## 八、责任链模式精细化规范
+
+### 【强制】责任链模式适用场景
+```
+提示词：@codebase 检查以下场景是否适合使用责任链模式：
+1. 有多个对象可以处理同一请求
+2. 处理者的顺序需要动态配置
+3. 请求的处理过程需要记录或监控
+4. 希望发送者与接收者解耦
+
+如果满足3个以上条件，必须使用责任链模式
+```
+
+### 【强制】责任链实现规范
+1. **抽象处理者规范**：
+   ```java
+   // 【强制】处理者基类命名：Abstract + 业务名称 + Handler
+   public abstract class AbstractValidationHandler {
+       
+       protected AbstractValidationHandler nextHandler;
+       
+       // 【强制】设置下一个处理者
+       public void setNextHandler(AbstractValidationHandler nextHandler) {
+           this.nextHandler = nextHandler;
+       }
+       
+       // 【强制】模板方法：统一的处理流程
+       public final ValidationResult handle(ValidationRequest request) {
+           try {
+               // 当前处理者处理
+               ValidationResult result = doHandle(request);
+               
+               // 如果处理失败且有下一个处理者，继续处理
+               if (!result.isSuccess() && nextHandler != null) {
+                   return nextHandler.handle(request);
+               }
+               
+               return result;
+               
+           } catch (Exception e) {
+               log.error("验证处理失败：{}", getHandlerName(), e);
+               return ValidationResult.failure(ErrorCode.VALIDATION_ERROR, e.getMessage());
+           }
+       }
+       
+       // 【强制】抽象方法：具体处理逻辑
+       protected abstract ValidationResult doHandle(ValidationRequest request);
+       
+       // 【强制】抽象方法：处理者名称（用于日志）
+       protected abstract String getHandlerName();
+   }
+   ```
+
+2. **具体处理者规范**：
+   ```java
+   @Component
+   public class ParameterValidationHandler extends AbstractValidationHandler {
+       
+       @Override
+       protected ValidationResult doHandle(ValidationRequest request) {
+           if (request.getParameters() == null || request.getParameters().isEmpty()) {
+               return ValidationResult.failure(ErrorCode.MISSING_PARAMETERS, "缺少必要参数");
+           }
+           
+           // 参数格式校验
+           for (Map.Entry<String, Object> entry : request.getParameters().entrySet()) {
+               if (!isValidParameter(entry.getKey(), entry.getValue())) {
+                   return ValidationResult.failure(ErrorCode.INVALID_PARAMETER, 
+                       "参数格式错误: " + entry.getKey());
+               }
+           }
+           
+           return ValidationResult.success();
+       }
+       
+       @Override
+       protected String getHandlerName() {
+           return "参数验证处理器";
+       }
+       
+       private boolean isValidParameter(String key, Object value) {
+           // 具体参数校验逻辑
+           return true;
+       }
+   }
+   ```
+
+3. **责任链管理器规范**：
+   ```java
+   @Service
+   @RequiredArgsConstructor
+   public class ValidationChainManager {
+       
+       private final List<AbstractValidationHandler> handlers;
+       
+       @PostConstruct
+       public void initChain() {
+           // 【强制】按顺序构建责任链
+           for (int i = 0; i < handlers.size() - 1; i++) {
+               handlers.get(i).setNextHandler(handlers.get(i + 1));
+           }
+       }
+       
+       public ValidationResult validate(ValidationRequest request) {
+           if (handlers.isEmpty()) {
+               throw new ProjectBizException(ErrorCode.NO_VALIDATION_HANDLER, "没有可用的验证处理器");
+           }
+           
+           return handlers.get(0).handle(request);
+       }
+   }
+   ```
+
+## 九、单例模式精细化规范
+
+### 【强制】单例模式适用场景
+```
+提示词：@codebase 检查以下场景是否需要使用单例模式：
+1. 全局只能有一个实例的资源（如配置管理器）
+2. 创建成本很高的对象（如数据库连接池）
+3. 无状态的工具类
+4. 系统级的服务组件
+
+注意：Spring环境下优先使用@Component单例管理
+```
+
+### 【强制】单例实现规范
+1. **枚举单例（推荐）**：
+   ```java
+   // 【强制】线程安全的单例实现
+   public enum ConfigurationManager {
+       INSTANCE;
+       
+       private final Map<String, String> configurations = new ConcurrentHashMap<>();
+       
+       public void setConfiguration(String key, String value) {
+           configurations.put(key, value);
+       }
+       
+       public String getConfiguration(String key) {
+           return configurations.get(key);
+       }
+       
+       public String getConfiguration(String key, String defaultValue) {
+           return configurations.getOrDefault(key, defaultValue);
+       }
+   }
+   
+   // 使用方式
+   // ConfigurationManager.INSTANCE.setConfiguration("key", "value");
+   ```
+
+2. **Spring管理单例（推荐）**：
+   ```java
+   @Component
+   @Scope("singleton")  // 默认就是单例，可以省略
+   public class SystemConfigurationService {
+       
+       private final Map<String, Object> cache = new ConcurrentHashMap<>();
+       
+       @PostConstruct
+       public void init() {
+           loadConfigurations();
+       }
+       
+       private void loadConfigurations() {
+           // 加载配置逻辑
+       }
+   }
+   ```
+
+## 十、装饰器模式精细化规范
+
+### 【强制】装饰器模式适用场景
+```
+提示词：@codebase 检查以下场景是否适合使用装饰器模式：
+1. 需要动态给对象添加功能
+2. 功能组合需要灵活配置
+3. 不适合使用继承扩展功能
+4. 需要透明地增强现有对象
+
+优先考虑Spring AOP，装饰器模式用于特殊场景
+```
+
+### 【强制】装饰器实现规范
+1. **组件接口规范**：
+   ```java
+   public interface MessageSender {
+       void sendMessage(Message message);
+   }
+   ```
+
+2. **具体组件规范**：
+   ```java
+   @Component("basicMessageSender")
+   public class BasicMessageSender implements MessageSender {
+       
+       @Override
+       public void sendMessage(Message message) {
+           // 基础发送逻辑
+           log.info("发送消息：{}", message.getContent());
+           // 实际发送实现
+       }
+   }
+   ```
+
+3. **装饰器基类规范**：
+   ```java
+   public abstract class MessageSenderDecorator implements MessageSender {
+       
+       protected final MessageSender delegate;
+       
+       public MessageSenderDecorator(MessageSender delegate) {
+           this.delegate = Objects.requireNonNull(delegate, "委托对象不能为空");
+       }
+       
+       @Override
+       public void sendMessage(Message message) {
+           delegate.sendMessage(message);
+       }
+   }
+   ```
+
+4. **具体装饰器规范**：
+   ```java
+   @Component
+   public class EncryptionMessageDecorator extends MessageSenderDecorator {
+       
+       private final EncryptionService encryptionService;
+       
+       public EncryptionMessageDecorator(
+           @Qualifier("basicMessageSender") MessageSender delegate,
+           EncryptionService encryptionService) {
+           super(delegate);
+           this.encryptionService = encryptionService;
+       }
+       
+       @Override
+       public void sendMessage(Message message) {
+           // 【强制】前置增强
+           Message encryptedMessage = encryptMessage(message);
+           
+           // 调用委托对象
+           super.sendMessage(encryptedMessage);
+           
+           // 【强制】后置处理（如需要）
+           log.info("消息加密发送完成");
+       }
+       
+       private Message encryptMessage(Message message) {
+           String encryptedContent = encryptionService.encrypt(message.getContent());
+           return message.withContent(encryptedContent);
+       }
+   }
+   ```
+
+## 十一、命令模式精细化规范
+
+### 【强制】命令模式适用场景
+```
+提示词：@codebase 检查以下场景是否适合使用命令模式：
+1. 需要将请求封装为对象（支持撤销、重做）
+2. 需要支持事务和批处理
+3. 需要记录操作日志
+4. 需要支持异步执行
+
+如果满足2个以上条件，推荐使用命令模式
+```
+
+### 【强制】命令模式实现规范
+1. **命令接口规范**：
+   ```java
+   public interface Command {
+       
+       // 【强制】执行命令
+       CommandResult execute();
+       
+       // 【强制】撤销命令（如支持）
+       CommandResult undo();
+       
+       // 【强制】命令标识
+       String getCommandId();
+       
+       // 【强制】命令描述
+       String getDescription();
+       
+       // 【强制】是否支持撤销
+       boolean isUndoable();
+   }
+   ```
+
+2. **具体命令规范**：
+   ```java
+   public class CreateOrderCommand implements Command {
+       
+       private final String commandId;
+       private final OrderService orderService;
+       private final CreateOrderRequest request;
+       private Long createdOrderId; // 用于撤销
+       
+       public CreateOrderCommand(OrderService orderService, CreateOrderRequest request) {
+           this.commandId = UUID.randomUUID().toString();
+           this.orderService = Objects.requireNonNull(orderService);
+           this.request = Objects.requireNonNull(request);
+       }
+       
+       @Override
+       public CommandResult execute() {
+           try {
+               Order order = orderService.createOrder(request);
+               this.createdOrderId = order.getId();
+               
+               return CommandResult.success(commandId, "订单创建成功", order);
+               
+           } catch (Exception e) {
+               log.error("创建订单命令执行失败：{}", commandId, e);
+               return CommandResult.failure(commandId, "订单创建失败", e);
+           }
+       }
+       
+       @Override
+       public CommandResult undo() {
+           if (!isUndoable() || createdOrderId == null) {
+               return CommandResult.failure(commandId, "命令不支持撤销或未执行");
+           }
+           
+           try {
+               orderService.cancelOrder(createdOrderId);
+               return CommandResult.success(commandId, "订单创建已撤销");
+               
+           } catch (Exception e) {
+               log.error("撤销创建订单命令失败：{}", commandId, e);
+               return CommandResult.failure(commandId, "撤销失败", e);
+           }
+       }
+       
+       @Override
+       public String getCommandId() {
+           return commandId;
+       }
+       
+       @Override
+       public String getDescription() {
+           return "创建订单：用户ID=" + request.getUserId();
+       }
+       
+       @Override
+       public boolean isUndoable() {
+           return true;
+       }
+   }
+   ```
+
+3. **命令调用者规范**：
+   ```java
+   @Service
+   public class CommandInvoker {
+       
+       private final Stack<Command> executedCommands = new Stack<>();
+       private final CommandAuditService auditService;
+       
+       public CommandResult executeCommand(Command command) {
+           // 【强制】记录命令执行
+           auditService.recordCommandStart(command);
+           
+           try {
+               CommandResult result = command.execute();
+               
+               if (result.isSuccess() && command.isUndoable()) {
+                   executedCommands.push(command);
+               }
+               
+               // 【强制】记录执行结果
+               auditService.recordCommandResult(command, result);
+               
+               return result;
+               
+           } catch (Exception e) {
+               log.error("命令执行异常：{}", command.getCommandId(), e);
+               CommandResult errorResult = CommandResult.failure(command.getCommandId(), "执行异常", e);
+               auditService.recordCommandResult(command, errorResult);
+               return errorResult;
+           }
+       }
+       
+       public CommandResult undoLastCommand() {
+           if (executedCommands.isEmpty()) {
+               return CommandResult.failure("", "没有可撤销的命令");
+           }
+           
+           Command lastCommand = executedCommands.pop();
+           return lastCommand.undo();
+       }
+   }
+   ```
+
+## 十二、Cursor智能辅助与规范检查
+
+### 【推荐】设计模式智能选择
+```
+提示词模板：
+@codebase 分析这段代码，确定是否需要应用设计模式：
+[粘贴待分析代码]
+
+请按以下标准分析：
+1. 代码复杂度评估（圈复杂度、分支数量）
+2. 重复代码识别
+3. 扩展点分析
+4. 推荐的具体设计模式
+5. 预期改进效果
+
+只有在明确能带来价值时才推荐引入设计模式。
+```
+
+### 【推荐】设计模式实现检查
+```
+提示词模板：
+@codebase 检查这个设计模式实现是否符合规范：
+[粘贴设计模式实现代码]
+
+检查标准：
+1. 命名规范是否正确
+2. 结构是否完整
+3. 异常处理是否到位
+4. 是否存在过度设计
+5. 与现有代码的集成是否合理
+```
+
+### 【推荐】设计模式组合使用检查
+```
+提示词模板：
+@codebase 检查多个设计模式的组合使用是否合理：
+[粘贴组合使用的代码]
+
+检查内容：
+1. 模式间的协作是否清晰
+2. 是否存在过度抽象
+3. 整体复杂度是否可控
+4. 是否有更简单的解决方案
+```
 
 ---
-*本指南将根据项目实践和团队反馈持续更新。*
+
+## 八、规范集成与约束
+
+### 【重要】与其他规范的强制约束
+1. **代码质量约束**：
+   - 所有设计模式实现必须遵循 [java-code-development-and-quality.mdc](mdc:.cursor/rules/java-code-development-and-quality.mdc) 的方法设计原则
+   - 异常处理必须遵循 [java-error-handling-and-operations.mdc](mdc:.cursor/rules/java-error-handling-and-operations.mdc) 规范
+   - 事务处理必须符合现有事务管理规范
+
+2. **架构约束**：
+   - 设计模式必须适配 [java-project-architecture-and-structure.mdc](mdc:.cursor/rules/java-project-architecture-and-structure.mdc) 的分层架构
+   - 包结构必须符合项目现有的组织方式
+
+### 【核心价值】精细化规范的优势
+- **🎯 明确指导**：每个模式都有具体的适用条件和实现步骤
+- **⚡ 避免混乱**：严格的命名和结构规范防止实现混乱
+- **🛡️ 质量保证**：强制的校验和异常处理确保代码质量
+- **📚 团队一致**：统一的实现模板保证团队代码风格一致
+- **🔍 问题预防**：详细的约束条件避免过度设计和误用

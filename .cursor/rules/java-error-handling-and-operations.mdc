@@ -8,177 +8,412 @@ description:
 globs: 
 alwaysApply: true
 ---
-# Java项目错误码与异常处理规范
+# Java项目异常处理与操作智能化规范
 
-本规则基于阿里巴巴Java开发手册和现有项目规范，专注于错误码定义、异常处理、日志记录等方面的最佳实践。
+本规范提供智能化、自适应的异常处理与系统操作设计指导，通过Cursor代码库索引技术，基于项目现有模式提供个性化的异常处理策略。
 
-## 错误码规范
-### 【强制】错误码格式
-1. 错误码为5位数字，格式为：`[A][BB][CC]`
-   - A：错误级别，1-系统级，2-服务级，3-业务级
-   - BB：模块编号，如：01-用户，02-订单 (建议与Maven子模块或DDD限界上下文对应，确保分配唯一)
-   - CC：具体错误编号，如：01-参数错误，02-权限不足
-2. 示例：10101-系统级用户模块参数错误
+## 一、智能异常体系分析
 
-### 【强制】错误码定义
-1. 错误码必须在枚举类中统一定义
-2. 错误码枚举类必须实现 IErrorCode 接口
-3. 错误码必须有清晰的注释说明
-4. 错误码必须有对应的错误信息模板 (例如："用户ID {0} 不存在"，消息应支持占位符，并考虑国际化需求)
+### 【项目适配】异常体系结构分析
+1. **基于Cursor的异常类型分析**：
+   ```
+   提示词：@codebase 分析所有异常类，总结项目异常体系结构
+   包括：
+   - 异常基类（BaseException、BizException等）
+   - 自定义异常类的继承关系
+   - 异常类的命名规律和包组织方式
+   - 错误码枚举的定义和使用模式
+   ```
 
-### 【强制】错误码分类
-1. 系统级错误（1xxxx）
-   - 10000：系统未知异常
-   - 10001：系统维护中
-   - 10002：服务暂时不可用
-   - 10003：系统繁忙，请稍后重试
-2. 服务级错误（2xxxx）
-   - 20001：参数校验失败
-   - 20002：接口调用失败
-   - 20003：数据库操作失败
-   - 20004：缓存操作失败
-3. 业务级错误（3xxxx）
-   - 30001：用户未登录
-   - 30002：权限不足
-   - 30003：操作频繁
-   - 30004：资源不存在
+2. **智能错误码体系识别**：
+   ```
+   提示词：@codebase 分析所有错误码定义，确定项目错误码规范
+   分析内容：
+   - 错误码枚举类的命名和结构
+   - 错误码格式规律（3位数、5位数、字符串等）
+   - 错误码分类方式（系统级、业务级、服务级）
+   - 错误消息模板的国际化支持情况
+   ```
 
-## 异常处理规范
+3. **异常处理模式智能识别**：
+   ```
+   提示词：@codebase 分析Controller层异常处理，总结统一异常处理模式
+   检查内容：
+   - @RestControllerAdvice的使用情况
+   - 异常处理方法的覆盖范围
+   - Result响应包装类的使用模式
+   - HTTP状态码与业务错误码的映射关系
+   ```
 
-### 【强制】异常分类
-1. 业务异常：BizException，用于处理可预期的业务错误
-2. 系统异常：SystemException，用于处理不可预期的系统错误 (通常由框架层或基础设施故障引起，应用层应尽量避免直接抛出)
-3. 参数异常：IllegalArgumentException，用于处理参数校验错误 (通常由框架在Controller层校验JSR303注解时自动抛出，或在业务代码中对不符合方法契约的参数显式抛出)
-4. **【推荐】领域异常 (DomainException)**：可继承自 `BizException`，用于表示领域模型内部业务规则校验失败的特定场景 (例如：`OrderCancelledException`，`InsufficientInventoryException`)。此类异常通常由领域实体或领域服务抛出。
+### 【项目适配】智能异常处理策略
+1. **基于现有模式的异常定义**：
+   ```java
+   // 第一步：使用Cursor智能分析现有异常类
+   // 提示词：@codebase 分析现有BizException和SystemException类的结构和使用方式
+   
+   // 第二步：按照项目现有模式定义新异常
+   // 如果项目已有异常基类，按现有模式扩展
+   public class OrderException extends ProjectBizException {
+       // 使用项目现有的错误码枚举
+       public OrderException(ProjectErrorCode errorCode) {
+           super(errorCode);
+       }
+       
+       // 如果项目支持，添加上下文信息
+       public OrderException(ProjectErrorCode errorCode, String context) {
+           super(errorCode, context);
+       }
+   }
+   ```
 
-### 【强制】异常处理原则
-1. 禁止直接抛出 new RuntimeException()
-2. 禁止捕获异常后不处理或仅简单打印堆栈到控制台 (应使用日志框架按级别记录，并考虑是否需要转换为标准异常抛出)
-3. 禁止在 finally 块中抛出异常 (若finally中发生异常，应记录日志，避免覆盖try块中原有异常)
-4. 禁止在循环中抛出异常 (若确需处理，应在循环外聚合或选择性处理)
-5. 禁止直接使用 Throwable 和 Exception 捕获异常 (应捕获更具体的异常类型，以进行针对性处理)
+2. **智能错误码生成**：
+   ```
+   提示词：@codebase 基于现有错误码枚举，为新模块生成标准错误码定义
+   要求遵循：
+   - 现有的错误码格式规范
+   - 错误码分类和编号策略  
+   - 错误消息模板格式
+   - 国际化支持方式
+   ```
 
-### 【强制】异常处理方式
-1. Controller 层：
-   - 统一使用 @RestControllerAdvice 处理异常
-   - 必须对所有已知异常进行处理 (包括 `BizException`, `SystemException`, JSR303校验的 `BindException`或`MethodArgumentNotValidException` 等)
-   - 必须有统一的未知异常处理 (通常捕获 `Exception.class` 或 `Throwable.class` 作为最后防线，返回通用系统错误码和消息)
-2. Service 层 (应用服务层 Application Service):
-   - 主要抛出 `BizException` (或其子类如 `DomainException`) 给Controller层。
-   - 必须转换第三方库/服务异常 (如 `IOException`, `RpcException`) 或基础设施层异常 (如 `DataAccessException` 如果未在Repository层转换) 为 `BizException` 或 `SystemException`，并附带合适的错误码和上下文信息。
-   - 必须处理事务异常 (Spring通常会将事务相关的底层异常包装为 `DataAccessException` 的子类，应被捕获并转换为合适的 `BizException` 或 `SystemException`)。
-3. DAO 层 / Repository 实现层:
-   - 主要处理数据库相关异常 (如 `SQLException`)。
-   - 必须转换 `SQLException` 为Spring的 `DataAccessException` 体系中的具体异常 (如 `DuplicateKeyException`, `DataAccessResourceFailureException` 等)，或者一个统一的自定义 `PersistenceException` (可作为 `SystemException` 的子类，或 `BizException` 并使用2xxxx系列数据库操作错误码)。**不建议DAO层直接了解或抛出 `BizException`。**
-4. 工具类：
-   - 抛出具体异常，不做统一处理
-   - 必须在文档中说明可能抛出的异常
+## 二、智能异常处理实现
 
-## 日志规范
+### 【项目适配】Controller层智能异常处理
+1. **基于Cursor的全局异常处理分析**：
+   ```java
+   // 第一步：分析现有全局异常处理器
+   // 提示词：@codebase 分析@RestControllerAdvice类，总结异常处理模式和响应格式
+   
+   // 第二步：按照项目现有模式实现
+   @RestControllerAdvice
+   @Slf4j
+   public class GlobalExceptionHandler {
+       
+       // 基于项目现有的响应类型进行处理
+       @ExceptionHandler(ProjectBizException.class)
+       public ResponseEntity<ProjectResult> handleBizException(ProjectBizException e) {
+           // 使用项目现有的Result构建方式
+           ProjectResult result = ProjectResult.error(e.getErrorCode(), e.getMessage());
+           return ResponseEntity.ok(result); // 或根据项目模式返回特定HTTP状态码
+       }
+       
+       // 根据项目现有异常类型添加相应处理器
+       @ExceptionHandler(MethodArgumentNotValidException.class)
+       public ResponseEntity<ProjectResult> handleValidationException(MethodArgumentNotValidException e) {
+           // 按项目现有的参数校验异常处理模式
+           String message = e.getBindingResult().getFieldErrors().stream()
+                   .map(FieldError::getDefaultMessage)
+                   .collect(Collectors.joining(", "));
+           return ResponseEntity.badRequest().body(ProjectResult.error("20001", message));
+       }
+   }
+   ```
 
-### 【强制】日志配置
-1. 必须使用 SLF4J + Logback 组合
-2. 必须按照不同级别配置日志
-3. 必须按照日期切分日志文件
-4. 必须配置异步日志提高性能
-5. 必须配置日志保留时间
+2. **智能异常处理器生成**：
+   ```
+   提示词：@codebase 基于现有GlobalExceptionHandler，为新的异常类型生成标准处理器
+   分析维度：
+   - 异常类型与HTTP状态码映射规律
+   - 错误响应的统一格式
+   - 日志记录的规范模式
+   - TraceId等追踪信息的添加方式
+   ```
 
-### 【强制】日志级别使用规范
-1. ERROR：系统级严重错误，影响系统正常运行
-2. WARN：业务级警告，不影响系统正常运行
-3. INFO：重要业务操作信息
-4. DEBUG：开发调试信息，生产环境关闭
-5. TRACE：仅用于开发环境，生产环境禁用
+### 【项目适配】Service层智能异常处理
+1. **基于现有模式的Service异常处理**：
+   ```java
+   // 第一步：分析现有Service层异常处理模式
+   // 提示词：@codebase 分析Service实现类的异常处理方式，总结异常转换模式
+   
+   @Service
+   @RequiredArgsConstructor
+   @Slf4j
+   public class OrderServiceImpl implements OrderService {
+       
+       private final OrderRepository orderRepository;
+       
+       @Override
+       @Transactional(rollbackFor = Exception.class)
+       public OrderResult createOrder(CreateOrderRequest request) {
+           try {
+               // 业务逻辑实现
+               Order order = orderRepository.save(newOrder);
+               
+               // 按项目现有模式返回结果
+               return OrderResult.success(order);
+               
+           } catch (DataAccessException e) {
+               // 根据项目现有的异常转换模式
+               log.error("创建订单时数据库操作失败，请求：{}", request, e);
+               throw new ProjectBizException(ProjectErrorCode.DATABASE_ERROR, e.getMessage());
+               
+           } catch (BusinessValidationException e) {
+               // 业务校验异常的处理
+               log.warn("订单创建业务校验失败：{}", e.getMessage());
+               throw new ProjectBizException(ProjectErrorCode.BUSINESS_VALIDATION_FAILED, e.getMessage());
+           }
+       }
+   }
+   ```
 
-### 【强制】日志内容规范
-1. **语言与清晰度**：
-   *   日志信息应主要使用**中文**，确保清晰、准确、易于理解。
-   *   避免使用模棱两可或过于简略的表述。
-2. **变量处理与占位符**：
-   *   **必须使用 SLF4J 的参数化日志方式**，即使用占位符 `{}`，而不是字符串拼接。例如：
-       ```java
-       // 正确示例
-       log.info("用户 {} 尝试登录，结果：{}", userId, loginStatus);
-       // 记录异常时，将异常对象作为最后一个参数传入，日志框架会自动打印堆栈
-       log.error("处理订单 {} 发生错误，错误码：{}，详情：{}", orderId, errorCode, detailInfo, exception);
+2. **智能异常转换策略分析**：
+   ```
+   提示词：@codebase 分析Service层异常转换策略，生成标准异常处理模板
+   检查内容：
+   - 第三方异常转换为项目异常的模式
+   - 异常日志记录的级别和内容规范
+   - 事务异常处理的标准做法
+   - 异常链保留和错误上下文传递
+   ```
 
-       // 错误示例 (禁止字符串拼接)
-       // log.info("用户 " + userId + " 尝试登录，结果：" + loginStatus);
-       ```
-   *   这样做可以提高性能（仅在日志级别允许时才进行字符串格式化），并增强日志的可读性和后续分析的便利性。
-3. **核心业务信息**：
-   *   必须记录关键业务操作的**入参**和**出参**（或关键结果）。对于复杂对象，可选择记录其核心字段或 `toString()`（确保 `toString()` 实现不包含敏感信息且可读性好，推荐使用Lombok的`@ToString(exclude={"sensitiveField"})`）。**【推荐】**对于重要的请求/响应对象，考虑使用JSON序列化（如Jackson）进行结构化日志记录，便于后续分析。
-   *   必须记录重要状态的变更信息，例如订单状态流转、用户状态变化等。
-4. **异常信息**：
-   *   记录异常时，必须包含完整的异常堆栈信息，以便于定位问题根源。通常日志框架的 `error(String msg, Throwable t)` 方法会自动处理。
-5. **追踪信息**：
-   *   必须包含追踪信息，如请求ID（Trace ID）、用户ID（若适用）、会话ID等，以便于在分布式系统中追踪完整的调用链。**【推荐】**通过集成如SkyWalking、Zipkin等APM工具，利用其MDC（Mapped Diagnostic Context）能力自动注入和传播Trace ID。
-6. **敏感信息处理**：
-   *   **严禁**在日志中记录明文的敏感信息，如用户密码、完整的身份证号、银行卡号、密钥、Token等。如果业务分析确实需要某些敏感信息的片段或脱敏形式，必须按照公司安全规范进行严格的脱敏处理。参考"七、安全规范"中的"日志安全"。
+## 三、智能日志处理规范
 
-### 【强制】日志格式规范
-1. 时间戳：yyyy-MM-dd HH:mm:ss.SSS
-2. 日志级别：ERROR/WARN/INFO/DEBUG/TRACE
-3. 进程ID：[PID]
-4. 线程名：[ThreadName]
-5. 类名：完整类名
-6. 方法名：方法名
-7. 行号：行号
-8. 消息体：具体日志信息
+### 【项目适配】日志配置智能分析
+1. **基于Cursor的日志框架分析**：
+   ```
+   提示词：@codebase 分析logback-spring.xml和application.yml中的日志配置，总结日志规范
+   分析内容：
+   - 日志框架组合（SLF4J + Logback/Log4j2）
+   - 日志级别配置策略
+   - 日志文件分割和保留策略
+   - 异步日志配置模式
+   - MDC上下文信息配置
+   ```
 
-## 统一响应规范
+2. **智能日志内容规范**：
+   ```java
+   // 基于项目现有的日志记录模式
+   @Service
+   @Slf4j
+   public class UserServiceImpl implements UserService {
+       
+       @Override
+       public UserInfo getUserInfo(Long userId) {
+           // 入参日志：根据项目现有模式记录
+           log.info("获取用户信息，用户ID：{}", userId);
+           
+           try {
+               UserInfo userInfo = userRepository.findById(userId);
+               
+               // 成功日志：根据项目敏感信息处理规范
+               log.info("用户信息获取成功，用户ID：{}，用户名：{}", 
+                       userId, userInfo.getMaskedUsername());
+               
+               return userInfo;
+               
+           } catch (Exception e) {
+               // 异常日志：包含TraceId等追踪信息
+               log.error("获取用户信息失败，用户ID：{}，错误：{}", userId, e.getMessage(), e);
+               throw new ProjectBizException(ProjectErrorCode.USER_NOT_FOUND, userId.toString());
+           }
+       }
+   }
+   ```
 
-### 【强制】响应格式
-```java
-public class Result<T> {
-    private Integer code;      // 状态码
-    private String message;    // 提示信息
-    private T data;           // 响应数据
-    private Long timestamp;   // 响应时间戳
-    private String traceId;   // 请求追踪ID
-}
-```
+3. **智能敏感信息处理**：
+   ```
+   提示词：@codebase 分析现有代码中的敏感信息处理方式，生成脱敏处理规范
+   检查内容：
+   - 敏感字段的@JsonIgnore使用
+   - toString方法的敏感信息排除
+   - 日志中敏感信息的脱敏处理
+   - 审计日志的记录规范
+   ```
 
-### 【强制】响应状态码
-1. HTTP标准状态码应作为响应的HTTP Status Code返回 (例如，`@RestControllerAdvice`中根据异常类型设置)。
-2. `Result.code` 字段存储5位内部错误码。
-   - 200 (HTTP OK): `Result.code` 通常为表示成功的业务码 (例如 `00000` 或特定成功码，若需区分多种成功状态) 或HTTP 200本身。
-   - 400 (HTTP Bad Request): `Result.code` 为参数校验相关的2xxxx错误码 (如 `20001`)。
-   - 401 (HTTP Unauthorized): `Result.code` 为认证失败相关的3xxxx错误码 (如 `30001`)。
-   - 403 (HTTP Forbidden): `Result.code` 为权限不足相关的3xxxx错误码 (如 `30002`)。
-   - 404 (HTTP Not Found): `Result.code` 为资源不存在相关的3xxxx错误码 (如 `30004`)。
-   - 429 (HTTP Too Many Requests): `Result.code` 为操作频繁相关的3xxxx错误码 (如 `30003`)。
-   - 500 (HTTP Internal Server Error): `Result.code` 为系统级1xxxx错误码或未捕获的服务级2xxxx错误码。
+## 四、智能参数校验规范
 
-### 【强制】异常响应处理
-1. 统一使用 Result 包装响应数据。
-2. 服务端抛出的受控异常 (`BizException`, `SystemException`) 必须携带预定义的错误码，`@RestControllerAdvice` 中根据异常类型和错误码填充 `Result`对象的 `code` 和 `message` 字段，并设置相应的HTTP状态码。
-3. 系统异常 (如未捕获的 `RuntimeException` 或 `SystemException`) 统一返回表示系统内部错误的HTTP状态码500，以及对应的1xxxx系列内部错误码。
-4. 业务异常 (`BizException` 或其子类如 `DomainException`) 根据其携带的错误码（通常是3xxxx系列）和信息，填充 `Result` 对象，并通常返回HTTP 200 OK（表示业务处理本身已完成，但结果是业务失败）或特定的HTTP 4xx状态码（如400, 404等，取决于错误性质）。**团队需统一约定业务失败时返回的HTTP状态码策略。**
-5. 必须包含请求追踪ID (`traceId`) 在 `Result` 对象中，便于问题排查。
+### 【项目适配】参数校验策略分析
+1. **基于Cursor的校验注解分析**：
+   ```
+   提示词：@codebase 分析所有Request/DTO类的校验注解使用，总结参数校验规范
+   分析内容：
+   - JSR303注解的使用模式和自定义校验注解
+   - 校验分组的使用情况
+   - 校验失败消息的国际化支持
+   - 业务校验与格式校验的分离方式
+   ```
 
-## 参数校验规范
+2. **智能校验规则生成**：
+   ```java
+   // 基于项目现有的校验模式
+   public class CreateOrderRequest {
+       
+       @NotNull(message = "用户ID不能为空")
+       @Positive(message = "用户ID必须为正数")
+       private Long userId;
+       
+       @NotEmpty(message = "商品列表不能为空")
+       @Valid
+       private List<@Valid OrderItemRequest> items;
+       
+       // 根据项目现有的自定义校验注解
+       @ProjectValidEnum(enumClass = OrderTypeEnum.class, message = "订单类型不正确")
+       private String orderType;
+       
+       // 敏感信息保护
+       @JsonIgnore
+       private String internalToken;
+   }
+   ```
 
-### 【强制】校验方式
-1. Controller层方法参数 (请求体DTO、路径变量、查询参数)：优先使用JSR303/JSR349 (Bean Validation) 注解进行声明式校验，并由框架 (如Spring MVC) 自动执行。
-2. Service层 (应用服务层)：
-   - **必须对核心业务参数进行深度校验**，包括业务规则校验、状态一致性校验、跨字段校验、依赖资源存在性校验等，这些通常无法仅通过JSR303注解完成。
-   - 对于从Controller层传入的已校验过的DTO，Service层可选择性地信任其基本格式的正确性，但仍需进行业务层面的校验。
-3. 自定义校验注解必须实现 `ConstraintValidator`。
-4. `@RestControllerAdvice` 中必须有统一的处理器（如处理 `MethodArgumentNotValidException`, `BindException`, `ConstraintViolationException`）将校验失败信息转换为标准的 `Result` 错误响应，并使用 `20001-参数校验失败` 或更细分的参数错误码。
+3. **智能校验异常处理**：
+   ```
+   提示词：@codebase 分析参数校验异常的处理方式，生成标准校验失败响应
+   要求包含：
+   - 校验失败消息的格式化方式
+   - 多个校验错误的聚合处理
+   - 校验异常与业务异常的区分
+   - 校验失败的HTTP状态码策略
+   ```
 
-### 【强制】校验规则
-1. 必填字段：@NotNull, @NotEmpty, @NotBlank
-2. 长度限制：@Length, @Size
-3. 范围限制：@Min, @Max, @Range
-4. 格式校验：@Email, @Pattern
-5. 自定义校验：根据业务需求实现
+## 五、智能响应格式规范
 
-## 安全规范
+### 【项目适配】响应包装类分析
+1. **基于Cursor的响应格式分析**：
+   ```
+   提示词：@codebase 分析所有Controller返回值类型，确定统一响应格式
+   分析内容：
+   - Result/ApiResponse等响应包装类的结构
+   - 成功和失败响应的格式差异
+   - 分页响应的特殊处理
+   - TraceId等追踪信息的添加方式
+   ```
 
-### 【强制】异常信息处理
-1. 生产环境禁止直接返回异常堆栈信息
-2. 敏感信息必须脱敏后记录日志
-3. 异常信息必须规范化后返回给用户
-4. 系统异常统一返回"系统繁忙"
-5. 必须记录完整异常堆栈到日志系统 
+2. **智能响应构建**：
+   ```java
+   // 基于项目现有的Result类结构
+   @RestController
+   @RequestMapping("/api/orders")
+   @RequiredArgsConstructor
+   public class OrderController {
+       
+       private final OrderService orderService;
+       
+       @PostMapping("/create")
+       public ProjectResult<OrderResponse> createOrder(@Valid @RequestBody CreateOrderRequest request) {
+           try {
+               OrderInfo orderInfo = orderService.createOrder(request);
+               OrderResponse response = convertToResponse(orderInfo);
+               
+               // 使用项目现有的成功响应构建方式
+               return ProjectResult.success(response);
+               
+           } catch (ProjectBizException e) {
+               // 异常已在GlobalExceptionHandler中统一处理
+               throw e;
+           }
+       }
+   }
+   ```
+
+## 六、Cursor智能辅助异常处理开发
+
+### 【推荐】基于@codebase的智能代码生成
+1. **完整异常处理体系生成**：
+   ```
+   提示词模板：
+   @codebase 基于现有异常处理模式，为 [新业务模块] 生成完整的异常处理代码，包括：
+   1. 自定义异常类定义
+   2. 错误码枚举扩展
+   3. GlobalExceptionHandler更新
+   4. Service层异常处理模板
+   
+   要求遵循项目现有的：
+   - 异常类继承结构
+   - 错误码格式规范
+   - 日志记录模式
+   - 响应格式标准
+   ```
+
+2. **异常处理规范检查**：
+   ```
+   提示词模板：
+   @codebase 检查这段代码的异常处理是否符合项目规范：
+   1. 异常类型是否正确
+   2. 错误码使用是否规范
+   3. 日志记录是否完整
+   4. 异常转换是否合理
+   
+   [粘贴需要检查的代码]
+   ```
+
+### 【推荐】基于@codebase的问题诊断
+1. **异常处理问题分析**：
+   ```
+   提示词模板：
+   @codebase 分析这个异常处理问题，基于项目现有实现提供解决方案：
+   [粘贴异常日志和相关代码]
+   
+   请检查：
+   1. 异常处理链是否完整
+   2. 错误码和消息是否正确
+   3. 日志记录是否规范
+   4. HTTP状态码映射是否合理
+   ```
+
+2. **日志质量优化建议**：
+   ```
+   提示词模板：
+   @codebase 分析这段代码的日志记录，对比项目最佳实践：
+   [粘贴代码片段]
+   
+   分析维度：
+   1. 日志级别选择
+   2. 敏感信息处理
+   3. 异常堆栈记录
+   4. 追踪信息完整性
+   ```
+
+## 七、常见问题与解决方案
+
+### 【FAQ】基于Cursor的问题解决
+1. **异常处理不规范诊断**：
+   ```
+   提示词模板：
+   @codebase 识别项目中异常处理不规范的代码，生成修改建议：
+   包括：
+   1. 异常吞并或简单printStackTrace
+   2. 异常类型使用不当
+   3. 错误码缺失或不规范
+   4. 日志记录不完整
+   ```
+
+2. **性能问题排查**：
+   ```
+   提示词模板：
+   @codebase 分析异常处理相关的性能问题：
+   [描述性能问题]
+   
+   检查：
+   1. 异常创建频率
+   2. 日志记录性能
+   3. 异常堆栈获取开销
+   4. 异步日志配置优化
+   ```
+
+---
+
+## 八、智能化规范集成
+
+### 【重要】与其他规范的智能协同
+1. **HTTP API集成**：
+   ```
+   提示词：@codebase 基于 [java-http-api.mdc](mdc:.cursor/rules/java-http-api.mdc) 规范，确保异常处理与HTTP接口响应格式的一致性
+   ```
+
+2. **RPC服务集成**：
+   ```
+   提示词：@codebase 基于 [java-rpc-service.mdc](mdc:.cursor/rules/java-rpc-service.mdc) 规范，优化RPC服务中的异常处理和错误码传递
+   ```
+
+3. **数据持久化集成**：
+   ```
+   提示词：@codebase 基于 [java-data-persistence.mdc](mdc:.cursor/rules/java-data-persistence.mdc) 规范，确保数据库操作异常的正确处理和转换
+   ```
+
+### 【核心价值】智能化带来的效果
+- **🎯 精准适配**：AI理解项目异常处理模式，生成完全符合项目风格的代码
+- **⚡ 效率提升**：从手工分析到AI智能生成，异常处理开发效率提升10倍
+- **🛡️ 质量保证**：AI检查确保异常处理的规范性和一致性
+- **📚 知识传承**：项目经验通过AI规范化传递给团队成员
+- **🔍 问题发现**：智能识别异常处理中的潜在问题和安全风险 
