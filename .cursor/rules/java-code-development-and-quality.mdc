@@ -149,9 +149,9 @@ alwaysApply: true
         @Autowired
         private TransactionTemplate transactionTemplate;
         // 可以注入其他需要在此事务中操作的Service或DAO组件，例如:
-        // @Autowired 
+        // @Autowired
         // private YourCustomService yourCustomService;
-        // @Autowired 
+        // @Autowired
         // private YourCustomDao yourCustomDao;
 
         public void doSomethingInTransaction() {
@@ -253,16 +253,81 @@ alwaysApply: true
    /**
     * 类的功能描述（详细说明类的职责、主要功能、使用场景）
     *
-    * @author ${USER} 或 ${git_config_user_name} （自动获取系统用户名或Git用户名）
-    * @date ${CURRENT_DATE} （自动获取当前日期，格式：yyyy-MM-dd）
+    * @author 开发者姓名（智能自动获取）
+    * @date yyyy-MM-dd（智能自动获取当前日期）
     * @version 版本号
     */
    ```
-   
-   **说明**：
-   - `@author` 支持自动获取：优先使用Git配置的user.name，其次使用系统用户名
-   - `@date` 自动获取当前系统日期，格式为 yyyy-MM-dd
-   - IDE可配置模板变量实现自动填充
+
+   **【智能自动获取规则】**：
+   - **Git作者获取优先级**：
+     1. 优先使用 `git config user.name` 获取当前Git仓库的提交作者
+     2. 如Git配置不存在，使用 `git config --global user.name` 获取全局Git配置
+     3. 最后备选使用系统用户名作为默认值
+   - **时间自动获取**：
+     - 使用系统当前日期，格式严格为 `yyyy-MM-dd`
+     - 通过 `date +%Y-%m-%d` 命令或等效方式获取
+   - **AI代码生成集成**：
+     - 当AI生成Java代码时，自动调用系统命令获取Git作者和当前时间
+     - 确保所有生成的类注释使用真实的开发者信息，而非模板变量
+     - 支持多平台兼容（Windows/macOS/Linux）
+
+### 【强制】AI智能获取Git信息实现规范
+1. **Git作者自动获取实现**：
+   ```bash
+   # 【重要】必须在项目根目录下执行，确保获取项目特定的Git配置
+   cd /path/to/project && git config user.name
+
+   # 或者使用相对路径（如果已在项目目录中）
+   git config user.name
+
+   # 备选：获取全局Git配置
+   git config --global user.name
+
+   # 示例输出：shizeying
+   ```
+
+2. **当前时间自动获取实现**：
+   ```bash
+   # macOS/Linux
+   date +%Y-%m-%d
+
+   # Windows (PowerShell)
+   Get-Date -Format "yyyy-MM-dd"
+
+   # 示例输出：2025-06-11
+   ```
+
+3. **【关键】项目目录路径要求**：
+   - **必须在项目根目录下执行Git命令**：确保获取的是当前项目的Git配置，而非全局或其他项目配置
+   - **工作目录检查**：AI在执行命令前应确认当前工作目录为项目根目录
+   - **路径切换示例**：如当前不在项目目录，需先切换：`cd /Users/zeyingshi/IdeaProjects/coding && git config user.name`
+
+3. **AI代码生成标准流程**：
+   ```java
+   // AI生成代码时的标准注释模板示例
+   /**
+    * 任务处理控制器
+    * 提供任务查询、完成、奖励领取等相关接口服务
+    *
+    * @author shizeying  // 自动从git config user.name获取
+    * @date 2025-06-11   // 自动从系统当前日期获取
+    * @version 1.0
+    */
+   ```
+
+4. **实现要求**：
+   - **【强制】真实信息**：禁止使用占位符或模板变量，必须使用真实获取的Git作者和时间
+   - **【强制】命令执行**：AI必须实际执行系统命令获取信息，不得使用假设或预设值
+   - **【强制】路径正确性**：Git命令必须在正确的项目根目录下执行，确保获取项目特定的配置
+   - **【强制】格式统一**：日期格式严格使用 `yyyy-MM-dd`，作者名称使用Git配置的真实姓名
+   - **【推荐】错误处理**：如果Git信息获取失败，应提供明确的错误信息和备选方案
+
+5. **验证机制**：
+   - 生成的代码注释中的@author字段必须与实际Git配置一致
+   - 生成的代码注释中的@date字段必须是当前系统日期
+   - 支持多次调用时保持信息的实时性和准确性
+
 2. 方法注释：
    ```java
    /**
@@ -277,7 +342,7 @@ alwaysApply: true
    ```
 3. 字段注释：
    ```java
-   /** 
+   /**
     * 字段说明
     * @mock 模拟数据（如果需要）
     */
