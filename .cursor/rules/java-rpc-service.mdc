@@ -3,133 +3,357 @@ description:
 globs: 
 alwaysApply: true
 ---
-# Java项目RPC服务规范
+# Java项目RPC服务智能化规范
 
-本规则基于现有项目规范，专注于RPC接口的设计、实现和调用规范。
+本规范提供智能化、自适应的RPC服务设计与实现指导，支持多种RPC框架，能够根据项目特点自动优化服务治理策略。
 
 ## 一、RPC接口规范 (服务端)
 
-### 【强制】接口定义规范
-1. 接口命名与参数规范：
+### 【项目适配】接口定义规范
+1. **响应包装类分析与使用**：
    ```java
+   // 第一步：使用Cursor智能分析响应包装类
+   // 提示词：@codebase 分析所有RPC接口的返回值类型，确定项目使用的响应包装类
+   
    public interface UserRpcService {
-       // 正确实例
-       Result<UserRpcResp> getUser(UserRpcReq req);
-       //错误实例
-       //UserResp getUser(UserRpcReq req);
+       // 第二步：基于Cursor分析结果，使用项目统一的响应包装类
+       ProjectResult<UserRpcResp> getUser(UserRpcReq req);  
+       // 具体类型由Cursor根据项目分析确定，如：Result<T>、ApiResponse<T>、UnifiedResult<T>等
+       
+       // 第三步：确保所有接口使用相同的响应格式
+       // 提示词：@codebase 确保这个新接口与现有RPC接口的响应格式保持一致
    }
    ```
-   (注意：此处的 Result 是指 `@com.hexonal.commons.base.Result`，其使用应遵循 `@java-error-handling-and-operations.mdc` 中关于统一响应体Result的规范。RPC的Req/Resp对象应定义在xxx-api模块。)
 
-### 【强制】接口实现规范
-1. 实现类命名：
+2. **基于Cursor代码库索引的分析方法**：
+   - **智能代码搜索**：使用 `@codebase` 搜索现有RPC接口，分析返回值类型模式
+     * 提示词：`@codebase 找到所有RpcService接口，分析它们的返回值类型`
+   - **自动导入分析**：利用Cursor的代码理解能力识别响应包装类
+     * 提示词：`@codebase 分析项目中RPC接口使用的Result类型，找到import路径`
+   - **模式识别统一**：让Cursor分析并推荐统一的响应格式
+     * 提示词：`@codebase 确保新RPC接口与现有接口保持一致的响应格式`
+   - **结构智能确认**：自动识别API模块的组织方式
+     * 提示词：`@codebase 检查RPC的Req/Resp对象在哪个模块，遵循现有结构`
+
+### 【项目适配】接口实现规范
+1. **基于项目现状的实现方式**：
    ```java
+   // 第一步：使用Cursor代码库索引分析现有RPC实现模式
+   // 提示词：@codebase 分析所有RpcServiceImpl类，总结框架使用模式和基类继承情况
+   
+   // 第二步：按照Cursor分析的项目模式实现
+   
+   // 模式1：项目已有BaseRpcService基类
    @DubboService
    @RequiredArgsConstructor
    public class UserRpcServiceImpl extends BaseRpcService implements UserRpcService {
        private final UserBizService userBizService;
-       // 实现方法
-       public Result<UserRpcResp> getUser(UserRpcReq req){
-         return rpcResult(() -> {
-            // 场景1: UserRpcReq直接适用于UserBizService (应用服务)
-            // UserRpcRespDTO userBizResp = userBizService.getUserDetails(req); // 假设UserBizService接受UserRpcReq
-            // return XBeanCopier.copyProperties(userBizResp, UserRpcResp.class);
-
-            // 场景2: UserRpcReq需要映射到UserBizService的不同DTO (更常见于解耦)
-            UserBizServiceReqDTO bizReqDto = XBeanCopier.copyProperties(req, UserBizServiceReqDTO.class);
-            UserBizServiceRespDTO bizRespDto = userBizService.getUserDetails(bizReqDto); // userBizService是应用服务
-            return XBeanCopier.copyProperties(bizRespDto, UserRpcResp.class);
-        });
-   }
-   ```
-
-2. 实现要求：
-   - 必须添加 `@DubboService` 注解 (并按需配置其属性如 `version`, `group`, `timeout`, `retries` 等，优先通过配置中心管理这些属性值)。
-   - 优先使用 `final` 修饰依赖
-   - 必须继承 `BaseRpcService` (其 `rpcResult` 方法应负责捕获来自 `userBizService` 的已知异常如 `BizException`、`SystemException`，并将其转换为 `Result` 对象中的code和message)。
-   - 必须实现接口中所有方法
-   - 必须处理所有异常场景 (参考 `@java-error-handling-and-operations.mdc`)
-   - 必须添加方法注释 (参考 `@java-code-development-and-quality.mdc`)
-   - 必须进行参数校验 (参考 `@java-error-handling-and-operations.mdc`)
-
-### 【强制】接口版本控制
-1. 接口升级原则：
-   ```java
-   public interface UserRpcService {
-       // V1版本接口
-       @Deprecated
-       Result<UserRpcResp> getUser(Long userId); // 假设旧版接口
        
-       // V2版本接口，增加了缓存参数或修改了请求体
-       Result<UserRpcResp> getUser(UserRpcReq req); // 新版接口使用请求对象
+       @Override
+       public ProjectResult<UserRpcResp> getUser(UserRpcReq req){
+         // 使用项目现有的响应包装方法（通常在BaseRpcService中）
+         return rpcResult(() -> {
+            // 检查项目现有的DTO转换方式：BeanUtils.copyProperties 或 自定义Converter
+            UserBizServiceReqDTO bizReqDto = BeanUtils.copyProperties(req, UserBizServiceReqDTO.class);
+            UserBizServiceRespDTO bizRespDto = userBizService.getUserDetails(bizReqDto);
+            return BeanUtils.copyProperties(bizRespDto, UserRpcResp.class);
+        });
+       }
+   }
+   
+   // 模式2：项目无BaseRpcService，直接实现
+   // @DubboService
+   // public class UserRpcServiceImpl implements UserRpcService {
+   //     // 按项目现有模式直接实现，不继承基类
+   // }
+   ```
+
+2. **基于Cursor智能分析的实现要求**：
+   - **注解模式智能识别**：
+     * 提示词：`@codebase 分析RPC实现类使用的注解模式，生成新实现的注解建议`
+   - **配置策略智能推荐**：
+     * 提示词：`@codebase 检查@DubboService注解和application.yml中的RPC配置，推荐配置策略`
+   - **依赖注入模式分析**：
+     * 提示词：`@codebase 分析项目依赖注入方式，@Autowired vs @RequiredArgsConstructor`
+   - **基类继承模式识别**：
+     * 提示词：`@codebase 检查RPC实现类是否有统一基类，如BaseRpcService`
+   - **异常处理模式学习**：
+     * 提示词：`@codebase 分析RPC实现中的异常处理模式，生成标准异常处理代码`
+   - **代码风格智能对齐**：
+     * 提示词：`@codebase 分析项目代码风格，确保新代码与现有风格一致`
+
+### 【项目适配】接口版本控制
+1. **基于项目现状的版本管理**：
+   ```java
+   // 第一步：使用Cursor智能分析版本控制模式
+   // 提示词：@codebase 分析RPC接口的版本控制方式，@DubboService中的version参数使用模式
+   
+   public interface UserRpcService {
+       // 如果项目已有版本控制策略，按现有方式进行：
+       
+       // 方式1：通过@DubboService注解版本控制（检查现有实现）
+       // @DubboService(version = "1.0.0")  // 在实现类上定义
+       @Deprecated
+       ProjectResult<UserRpcResp> getUser(Long userId);
+       
+       // 新版本接口，保持响应格式一致
+       ProjectResult<UserRpcResp> getUser(UserRpcReq req);
    }
    ```
 
-2. 版本号管理：
-   - 主版本号：不兼容的API修改 (例如，方法签名改变，字段删除/类型改变)。**【强制】**不兼容的修改必须使用新的Dubbo服务版本号 (如 `@DubboService(version = "2.0.0")`)，旧版本可标记 `@Deprecated` 并逐步下线。
-   - 次版本号：向下兼容的功能性新增 (例如，在请求对象中增加可选字段，在响应对象中增加新字段)。通常可使用相同的Dubbo服务版本号，或按需升级次版本。
-   - 修订号：向下兼容的问题修正。通常可使用相同的Dubbo服务版本号。
-   - **【核心】** Dubbo的 `version` 属性是管理服务多版本的关键。避免在同一接口内通过不同方法名来表示同一业务操作的不同版本。
+2. **基于Cursor的版本管理分析**：
+   - **版本使用模式智能识别**：
+     * 提示词：`@codebase 统计@DubboService注解中version参数的使用情况，总结版本规律`
+     * 提示词：`@codebase 找到所有@Deprecated的RPC接口，分析废弃处理方式`
+   - **版本号规则智能推荐**：
+     * 提示词：`@codebase 分析pom.xml和现有接口的版本号格式，推荐一致的版本规范`
+   - **兼容性策略智能生成**：
+     * 提示词：`@codebase 分析Dubbo版本控制策略，生成新版本接口的兼容性处理方案`
+     * 提示词：`@codebase 检查项目是否支持接口重载，推荐多版本并存策略`
 
-### 【强制】接口安全规范
-1. 参数校验： (参考 `@java-error-handling-and-operations.mdc` 中的参数校验规范)
+### 【智能】接口安全规范
+1. **智能参数校验策略**：
    ```java
    public class UserRpcReq {
        @NotNull(message = "用户ID不能为空")
+       @Positive(message = "用户ID必须为正数")
        private Long userId;
        
        @NotBlank(message = "用户名不能为空")
        @Length(min = 2, max = 20, message = "用户名长度必须在2-20之间")
+       @Pattern(regexp = "^[\\u4e00-\\u9fa5a-zA-Z0-9_]+$", message = "用户名格式不正确")
        private String username;
-       // 其他业务参数...
+       
+       // 智能安全增强
+       @JsonIgnore // 防止敏感信息序列化
+       private String internalToken;
+       
+       // 智能类型转换和验证
+       @ValidEnum(enumClass = UserTypeEnum.class, message = "用户类型不正确")
+       private String userType;
    }
    ```
 
-## 二、业务方调用RPC接口规范 (客户端/调用方)
+2. **智能安全防护**：
+   - **参数校验自动化**：智能检测并推荐合适的校验注解
+   - **敏感信息防护**：自动识别并保护敏感字段
+   - **注入攻击防护**：智能检测SQL注入、XSS等安全风险
+   - **访问控制智能化**：根据接口重要性自动推荐认证和授权策略
+   - **审计日志智能记录**：自动记录关键操作的审计信息
 
-### 【强制】接口定义规范 (Proxy Service)
-1. 接口命名与参数规范：
+## 二、智能化RPC客户端规范 (调用方)
+
+### 【智能】接口定义规范 (Proxy Service)
+1. **智能客户端封装策略**：
    ```java
    public interface UserRpcProxyService {
-       // 错误实例
-       //Result<UserRpcResp> getUser(UserRpcReq req);
-       //正确实例
+       // 推荐：直接返回业务数据，智能处理响应解析
        UserRpcResp getUser(UserRpcReq req);
+       
+       // 可选：根据需要保留原始响应结构
+       // UnifiedResult<UserRpcResp> getUserWithFullResponse(UserRpcReq req);
+       
+       // 智能异步支持
+       // CompletableFuture<UserRpcResp> getUserAsync(UserRpcReq req);
    }
    ```
-   (注意：调用方封装后的方法通常直接返回业务数据 `UserRpcResp`，`Result` 的解析在实现类中完成)
 
-### 【强制】接口实现规范 (Proxy Service Impl)
-1. 实现类命名：
+2. **智能封装优势**：
+   - **响应透明化**：调用方无需关心底层响应格式，专注业务逻辑
+   - **异常统一处理**：智能转换RPC异常为业务异常
+   - **性能优化**：支持异步调用、批量调用等高级特性
+
+### 【智能】接口实现规范 (Proxy Service Impl)
+1. **基于项目现状的客户端实现**：
    ```java
+   // 第一步：使用Cursor智能分析现有RPC客户端模式
+   // 提示词：@codebase 分析所有RpcProxyServiceImpl，总结实现模式和代码结构
+   
+   // 常见模式1：继承BaseRpcService基类
    @Service
-   @RequiredArgsConstructor // 推荐使用构造器注入
+   @RequiredArgsConstructor
    public class UserRpcProxyServiceImpl extends BaseRpcService implements UserRpcProxyService {
-       @DubboReference //(version = "1.0.0", group = "xxx") // 按需指定版本和分组
-       private UserRpcService userRpcService; // UserRpcService 为RPC服务端定义的接口
+       
+       // 按项目现有方式配置RPC引用
+       @DubboReference(timeout = 3000, retries = 2) // 检查现有项目的配置方式
+       private UserRpcService userRpcService;
 
-       // 实现方法
        @Override
-       public UserRpcResp getUser(UserRpcReq req){
-          // 参数校验 (如果适用，例如对 req 的某些字段有特定于调用方的校验)
-          // if (req.getSomeClientSpecificField() == null) { ... }
-          // BaseRpcService.parseResult应处理来自RPC调用的Result，如果Result表示失败，则抛出客户端异常
+       public UserRpcResp getUser(UserRpcReq req) {
+          // 按项目现有的调用模式（通常是parseResult模式）
           return super.parseResult(() -> userRpcService.getUser(req));
        }
    }
+   
+   // 常见模式2：无基类，直接处理Result
+   // @Service  
+   // public class UserRpcProxyServiceImpl implements UserRpcProxyService {
+   //     @DubboReference
+   //     private UserRpcService userRpcService;
+   //     
+   //     @Override
+   //     public UserRpcResp getUser(UserRpcReq req) {
+   //         ProjectResult<UserRpcResp> result = userRpcService.getUser(req);
+   //         if (!result.isSuccess()) {
+   //             throw new BizException(result.getCode(), result.getMessage());
+   //         }
+   //         return result.getData();
+   //     }
+   // }
    ```
 
-2. 实现要求：
-   - 必须添加 `@Service` 注解 (Spring Service)
-   - 必须使用 `@DubboReference` 注入RPC服务
-   - 推荐继承 `BaseRpcService` (如果提供了 `parseResult` 等通用逻辑)
-   - 必须实现接口中所有方法
-   - 必须处理所有异常场景，特别是RPC调用异常 (例如 `RpcException` 或由 `BaseRpcService.parseResult` 抛出的自定义客户端业务异常)。处理逻辑应遵循 `@java-error-handling-and-operations.mdc`。
-   - 必须添加方法注释 (参考 `@java-code-development-and-quality.mdc`)
-   - 可选进行调用方特有的参数校验
+2. **基于Cursor智能分析的客户端实现要求**：
+   - **客户端注解模式智能识别**：
+     * 提示词：`@codebase 分析RpcProxyServiceImpl类的注解使用模式，生成标准注解建议`
+   - **RPC引用方式智能推荐**：
+     * 提示词：`@codebase 分析@DubboReference和@Reference的使用情况，推荐统一引用方式`
+     * 提示词：`@codebase 分析RPC引用注解的配置参数，生成标准配置模板`
+   - **基类继承模式智能检测**：
+     * 提示词：`@codebase 检查RpcProxyServiceImpl是否有统一基类，分析继承模式`
+   - **异常处理模式智能学习**：
+     * 提示词：`@codebase 分析RPC客户端的异常处理方式，parseResult vs 直接调用`
+   - **响应解析策略智能推荐**：
+     * 提示词：`@codebase 分析RPC客户端返回值处理，直接返回业务对象 vs Result包装`
+   - **配置策略智能统一**：
+     * 提示词：`@codebase 分析RPC超时重试配置，注解配置 vs yml配置，推荐统一策略`
 
 ---
-**附注：**
-*   **事务边界**：RPC服务端的方法 (`XxxRpcServiceImpl`) 通常是一个完整的事务单元（如果操作涉及写库）。客户端调用RPC服务时，不应期望其能加入到客户端的本地事务中。
-*   **幂等性**：对于可能被重试的写操作RPC接口，服务端应设计为幂等的。客户端可在 `XxxRpcReq` 中传递幂等性令牌，服务端进行处理。参考 `@java-http-api.mdc` 中关于幂等性的建议。
-*   **超时与重试**：客户端 (`@DubboReference`) 和服务端 (`@DubboService`) 均可配置超时时间和重试次数。应根据接口的特性（读/写，耗时）和网络环境合理配置，避免不当重试导致数据不一致或雪崩效应。配置值建议通过Apollo配置中心管理。
+## 三、RPC服务治理实践要点
+
+### 【项目适配】核心治理问题
+1. **事务边界处理**：
+   - **现状分析**：RPC服务端方法通常是独立事务单元，客户端不能将其纳入本地事务
+   - **基于Cursor的智能分析**：
+     * **事务使用模式识别**：`@codebase 分析RPC服务中@Transactional的使用模式，总结事务边界设计`
+     * **分布式事务检测**：`@codebase 检查项目是否集成Seata、TCC等分布式事务组件`
+     * **事务策略推荐**：`@codebase 分析项目事务处理策略，为新RPC服务推荐合适的事务方案`
+
+2. **幂等性处理**：
+   - **智能幂等性分析**：
+     * **幂等模式识别**：`@codebase 搜索幂等相关实现，分析项目的幂等性保障策略`
+     * **幂等实现方式总结**：`@codebase 分析现有幂等实现方式：请求ID、状态机、唯一索引等`
+     * **幂等字段设计推荐**：`@codebase 基于现有RpcReq结构，推荐idempotentKey字段的设计方案`
+   - **Cursor辅助实现**：`@codebase 生成标准的RPC幂等性实现代码，包含请求验证和重复处理逻辑`
+
+3. **超时与重试配置**：
+   - **智能配置分析**：
+     * **配置模式识别**：`@codebase 分析application.yml和@DubboReference中的timeout/retries配置模式`
+     * **配置优先级确认**：`@codebase 分析RPC配置的优先级策略：客户端 vs 服务端 vs 默认配置`
+     * **配置中心检测**：`@codebase 检查项目是否使用Apollo/Nacos，分析配置中心使用模式`
+   - **智能配置推荐**：
+     * **操作类型配置**：`@codebase 基于现有RPC接口，按读/写/批量操作推荐timeout和retries值`
+     * **配置模板生成**：`@codebase 生成符合项目规范的RPC配置模板`
+
+---
+
+## 四、Cursor智能辅助RPC开发实践
+
+### 【推荐】基于@codebase的智能代码生成
+1. **完整RPC服务生成**：
+   ```
+   提示词模板：
+   @codebase 基于现有RPC服务模式，为 [业务领域] 生成完整的RPC服务代码，包括：
+   1. API接口定义（XxxRpcService）
+   2. 请求响应对象（XxxRpcReq/Resp）  
+   3. 服务端实现（XxxRpcServiceImpl）
+   4. 客户端代理（XxxRpcProxyServiceImpl）
+   
+   要求遵循项目现有的：
+   - 响应包装类使用模式
+   - 注解和配置方式
+   - 异常处理模式
+   - 代码风格规范
+   ```
+
+2. **智能代码优化**：
+   ```
+   提示词模板：
+   @codebase 优化这个RPC实现，确保：
+   1. 与项目现有RPC服务保持一致性
+   2. 遵循项目的异常处理规范
+   3. 配置参数符合项目标准
+   4. 代码风格与现有代码对齐
+   
+   [粘贴需要优化的代码]
+   ```
+
+### 【推荐】基于@codebase的规范检查
+1. **代码合规性验证**：
+   ```
+   提示词模板：
+   @codebase 检查这个RPC实现是否符合项目规范：
+   1. 注解使用是否一致
+   2. 响应格式是否统一
+   3. 异常处理是否规范
+   4. 命名是否符合项目约定
+   
+   [粘贴RPC代码]
+   ```
+
+2. **最佳实践推荐**：
+   ```
+   提示词模板：
+   @codebase 基于项目现有RPC最佳实践，为这个场景推荐实现方案：
+   [描述业务场景和技术要求]
+   
+   考虑因素：
+   - 性能要求
+   - 事务需求  
+   - 幂等性要求
+   - 异常处理策略
+   ```
+
+### 【推荐】基于@codebase的智能重构
+1. **RPC服务升级**：
+   ```
+   提示词模板：
+   @codebase 帮我重构这个RPC服务，升级到项目最新规范：
+   1. 更新注解和配置方式
+   2. 优化异常处理逻辑
+   3. 添加必要的参数校验
+   4. 优化性能和安全性
+   
+   [粘贴现有RPC代码]
+   ```
+
+2. **批量规范统一**：
+   ```
+   提示词模板：
+   @codebase 分析项目中所有RPC服务，识别不符合最新规范的实现，
+   生成统一修改方案，包括：
+   1. 需要修改的文件清单
+   2. 具体修改建议
+   3. 潜在风险评估
+   4. 修改优先级排序
+   ```
+
+---
+
+## 五、常见问题与解决方案
+
+### 【FAQ】基于Cursor的问题诊断
+1. **RPC调用异常诊断**：
+   ```
+   提示词模板：
+   @codebase 分析这个RPC调用异常，基于项目现有实现提供解决方案：
+   [粘贴异常日志和相关代码]
+   
+   请检查：
+   1. 配置是否正确
+   2. 网络连接是否正常
+   3. 版本兼容性问题
+   4. 异常处理是否合理
+   ```
+
+2. **性能问题分析**：
+   ```
+   提示词模板：
+   @codebase 分析这个RPC服务的性能问题，对比项目中的高性能实现：
+   [描述性能问题和相关代码]
+   
+   分析维度：
+   1. 超时配置合理性
+   2. 重试策略优化
+   3. 序列化性能
+   4. 连接池配置
+   ```

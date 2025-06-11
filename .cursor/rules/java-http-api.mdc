@@ -3,185 +3,334 @@ description:
 globs: 
 alwaysApply: true
 ---
-# Java项目HTTP API规范
+# Java项目HTTP API智能化规范
 
-本规则基于现有项目规范，专注于HTTP接口的设计规范。
+本规范基于Cursor代码库索引技术，通过`@codebase`智能分析现有项目模式，确保HTTP接口设计的一致性和规范性。
 
 ## HTTP接口规范
 
-### 【强制】接口URL格式
-1. 基本格式：`http://xxx-develop.xxx.com/{大业务领域}/{版本或网络标识}/{子领域}/{模块}/{具体操作}` (例如: `/v1/` 或 `/app/`)
-2. 版本号格式：v1, v2, v3等 (用于路径中的版本标识)
-3. 网络类型 (用于路径中的网络标识，若与版本号同时使用，团队需统一路径组合方式，例如 `/v1/app/` 或约定只使用其一)：
-   - app：移动端接口
-   - web：Web端接口
-   - mini：小程序接口
-   - intranet：内网接口
-4. URL必须全小写，单词间用中划线"-"分隔。
-5. URL路径应清晰表达资源和操作意图，即使所有请求均为POST，路径本身也应具有可读性，以区分不同业务操作。
-
-### 【强制】请求方法规范
-1.  **所有HTTP API接口必须统一使用POST方法。**
-2.  **操作意图区分**：
-    *   业务操作的具体类型（如创建、查询、更新、删除、特定业务动作等）必须通过以下一种或组合方式在POST请求中明确：
-        *   **URL路径（推荐首选）**：接口的URL路径应尽可能清晰地描述其操作的资源和意图。例如，`POST /user/create`，`POST /user/get-by-id`，`POST /order/update-status`。
-        *   **请求体参数**：可以在POST请求的JSON Body中包含一个明确的字段（如 `action` 或 `operationType`）来指定具体操作。此方式应谨慎使用，主要用于同一资源有多个高度相关的次要操作，以避免URL路径过多。例如：
-            ```json
-            // POST /user/manage
-            {
-              "action": "getUserDetails", // 或 "createUser", "updateProfile"
-              "userId": "123",
-              // ...其他参数
-            }
-            ```
-            （注意：此方式下URL可能更通用，如 `/user/manage`，具体操作依赖`action`字段。需谨慎设计以避免URL过于宽泛导致职责不明。）
-3.  **参数传递**：所有请求参数，包括传统上通过URL Query String传递的参数（如分页参数、查询条件、标识符等），都必须通过POST请求的Request Body以JSON格式传递。
-4.  **幂等性**：虽然所有请求都使用POST，但对于本质上是幂等的操作（如根据唯一ID更新资源、删除资源），服务端实现时仍需保证其幂等性。客户端在需要时（如网络超时后重试）可以安全地重发这些POST请求。非幂等操作（如不带唯一标识的创建）不应设计为可安全重试。
-5.  **缓存**：统一使用POST请求后，标准的HTTP GET缓存机制将不再适用。如需缓存，应在应用层面或通过其他服务端缓存策略实现。
-
-### 【强制】接口命名规范 (所有操作均使用POST)
-*   接口URL路径应清晰描述其功能，即使方法统一为POST。
-*   建议在URL路径中包含动词或能表明操作类型的词语，以增强可读性。
-
-1. 新增接口 (POST)：
+### 【项目适配】接口URL格式智能分析
+1. **基于Cursor的URL格式识别**：
    ```
-   POST /ums/v1/employee/add              // 外网单个新增
-   POST /ums/v1/employee/batch-add        // 外网批量新增
-   POST /ums/intranet/employee/add        // 内网单个新增
-   POST /ums/intranet/employee/batch-add  // 内网批量新增
+   提示词：@codebase 分析现有Controller类的@RequestMapping路径，总结项目URL格式规范
+   包括：
+   - 基础路径格式（如/api/v1、/ums/v1等）
+   - 版本控制策略（v1/v2 vs app/web等）
+   - 业务模块路径组织
+   - 具体操作路径命名规律
    ```
 
-2. 修改接口 (POST)：
+2. **智能路径规范推荐**：
    ```
-   POST /ums/v1/employee/update                // 按主键修改
-   POST /ums/v1/employee/batch-update          // 按主键批量修改
-   POST /ums/v1/employee/update-by-tel         // 按手机号修改
-   POST /ums/v1/employee/update-by-condition   // 按条件修改
-   ```
-
-3. 删除接口 (POST)：
-   ```
-   POST /ums/v1/employee/delete                // 按主键删除
-   POST /ums/v1/employee/batch-delete          // 按主键批量删除
-   POST /ums/v1/employee/delete-by-tel         // 按手机号删除
-   POST /ums/v1/employee/delete-by-condition   // 按条件删除
+   提示词：@codebase 分析项目域名配置和路径结构，生成URL格式标准模板
+   要求分析：
+   - 环境域名规则（develop/test/prod）
+   - 业务领域划分方式
+   - 版本号和网络标识使用规律
+   - 路径命名约定（中划线vs驼峰等）
    ```
 
-4. 查询接口 (POST)：
+3. **路径一致性检查**：
    ```
-   POST /ums/v1/employee/get-by-id             // 主键查询 (参数在请求体中)
-   POST /ums/v1/employee/get-by-tel            // 手机号查询 (参数在请求体中)
-   POST /ums/v1/employee/page-query            // 分页查询 (分页参数在请求体中)
-   POST /ums/v1/employee/list-query            // 列表查询 (查询参数在请求体中)
+   提示词：@codebase 检查所有HTTP接口路径，识别不符合项目规范的URL格式
    ```
 
-### 【强制】请求参数规范
-1.  **所有请求参数必须通过POST请求的Request Body以JSON格式传递。**
-2.  分页参数 (示例，作为JSON请求体的一部分):
-    ```java
-    // 请求对象示例: UserPageReq.java
-    // import com.hexonal.commons.base.BaseQueryReq; // 如果还适用
+### 【项目适配】请求方法智能分析
+1. **基于Cursor的HTTP方法使用分析**：
+   ```
+   提示词：@codebase 统计所有Controller方法使用的HTTP方法（GET/POST/PUT/DELETE），分析项目HTTP方法使用规律
+   包括：
+   - 各种HTTP方法的使用频率
+   - 是否有统一使用POST的趋势
+   - 不同业务场景的HTTP方法选择模式
+   ```
 
-    public class UserPageReq /* extends BaseQueryReq */ {
-        @Min(1)
-        private Integer pageNum = 1;    // 页码，从1开始
-        
-        @Min(1) @Max(100) // 建议最大值也通过配置管理
-        private Integer pageSize = 10;  // 每页大小，默认10
-        
-        // ...其他查询条件字段...
-        private String nameQuery;
-        private Integer statusQuery;
+2. **【强制】POST请求参数规范**：
+   - **所有POST请求的参数必须通过Request Body以JSON格式传递**
+   - **禁止在POST请求中使用Query参数或Path变量传递业务参数**
+   - **分页参数、查询条件、标识符等都必须放在JSON请求体中**
+   
+   ```java
+   // ✅ 正确做法
+   @PostMapping("/user/query")
+   public Result<UserResp> queryUser(@RequestBody UserQueryReq req) {
+       // req包含所有参数：userId, pageNum, pageSize, queryCondition等
+   }
+   
+   // ❌ 错误做法  
+   @PostMapping("/user/query")
+   public Result<UserResp> queryUser(@RequestParam Long userId, @RequestBody UserQueryReq req) {
+       // 不能混用@RequestParam和@RequestBody
+   }
+   ```
 
-        // 【推荐】排序参数
-        private String sortBy;      // 排序字段 (例如：createdAt)
-        private String sortDirection; // 排序方向 (ASC 或 DESC)
-    }
-    ```
-    请求体JSON示例:
-    ```json
-    {
-        "pageNum": 1,
-        "pageSize": 20,
-        "nameQuery": "张三",
-        "statusQuery": 1,
-        "sortBy": "createdAt",
-        "sortDirection": "DESC"
-    }
-    ```
+3. **请求方法规范智能推荐**：
+   ```
+   提示词：@codebase 基于现有接口分析，推荐统一的HTTP方法使用策略
+   分析维度：
+   - 操作类型与HTTP方法的映射关系  
+   - 参数传递方式一致性检查（确保POST使用Body）
+   - 幂等性处理策略
+   - 缓存策略设计
+   ```
 
-3.  时间参数：
-    *   请求（在JSON Body中）：使用时间戳（毫秒）或ISO8601格式字符串（如 `"2023-10-26T10:30:00.000Z"`）。推荐使用ISO8601以增强可读性。
-    *   响应：统一使用ISO8601格式（`yyyy-MM-dd'T'HH:mm:ss.SSSZ`）。
+4. **【强制】幂等性设计要求**：
+   - **虽然统一使用POST，但服务端必须保证幂等操作的幂等性**
+   - **对于本质上幂等的操作（查询、按ID更新、删除），客户端可以安全重试**
+   - **非幂等操作（创建）应考虑引入幂等性令牌机制**
+   
+   ```java
+   // 幂等性令牌示例
+   public class CreateUserReq {
+       @NotBlank
+       private String idempotencyKey; // 幂等性令牌
+       
+       @NotBlank
+       private String userName;
+       // ... 其他字段
+   }
+   ```
 
-4.  枚举参数（在JSON Body中）：
-    *   建议传递枚举的名称（字符串）或约定的代码值（整数/字符串）。如果传递代码值，需确保接口文档清晰说明。
-    ```java
-    // 服务端定义
-    public enum OrderStatus {
-        UNPAID(0, "未支付"),
-        PAID(1, "已支付"),
-        CANCELLED(-1, "已取消");
-        // ...
-    }
-    // 请求体JSON示例 (传递名称)
-    // { "orderStatus": "PAID" }
-    // 或请求体JSON示例 (传递代码值)
-    // { "orderStatus": 1 }
-    ```
+5. **参数传递合规检查**：
+   ```
+   提示词：@codebase 检查所有POST接口，确保参数传递符合规范
+   要求检查：
+   - POST接口是否使用@RequestBody
+   - 是否存在@RequestParam和@RequestBody混用
+   - Query参数使用是否合规
+   - 幂等性处理是否完整
+   ```
 
-### 【强制】响应规范
-1.  分页响应：**必须统一使用**在 `@java-error-handling-and-operations.mdc` 中定义的 `Result<T>` 结构。其中 `T` 为分页数据结构，例如 `PageData<ItemType>`，该 `PageData` 应包含列表 (`list`)、总记录数 (`totalCount` 或 `totalRecords`)、当前页码 (`pageNum`)、每页大小 (`pageSize`)。
-    ```java
-    // 示例 PageData 结构 (应在公共模块定义)
-    // public class PageData<T> {
-    //     private List<T> list;
-    //     private long totalRecords;
-    //     private int pageNum;
-    //     private int pageSize;
-    //     // 构造器、getter、setter
-    // }
-    // Result<PageData<UserPageResp>>
-    ```
-    所有响应数据，包括分页结果，都包装在统一的 `Result<T>` 响应体内。
+### 【项目适配】接口命名智能规范
+1. **基于Cursor的命名模式分析**：
+   ```
+   提示词：@codebase 分析所有Controller接口的命名模式，总结项目接口命名规范
+   分析内容：
+   - URL路径中的动词使用规律（add/create、update/modify、delete/remove等）
+   - 批量操作的命名模式（batch-xxx vs xxx-batch等）
+   - 查询操作的命名规律（get/query/find等）
+   - 特定条件操作的命名方式（by-id、by-condition等）
+   ```
 
-### 【强制】接口文档规范 (所有请求均为POST)
-1.  Swagger (OpenAPI) 注解示例：
-    *   所有操作（`@ApiOperation`）均对应 `@PostMapping` 注解。
-    *   参数描述 (`@ApiImplicitParam`, 或通过请求体DTO的 `@ApiModelProperty`) 必须明确参数是在Request Body中。
-    ```java
-    @Api(tags = "用户管理")
-    @RestController
-    @RequestMapping("/api/v1/users") // 基础路径
-    public class UserController {
-        
-        @ApiOperation(value = "创建用户", notes = "通过POST请求创建新用户并返回用户信息")
-        @PostMapping("/create") // 具体操作路径
-        public Result<UserResp> createUser(@RequestBody @Valid UserCreateReq userCreateReq) {
-            // 实现代码，UserCreateReq 包含创建用户所需参数
-            // 返回 Result<UserResp>
-        }
+2. **智能命名规范生成**：
+   ```
+   提示词：@codebase 基于现有接口命名分析，为新业务模块生成标准的接口命名模板
+   要求包含：
+   - CRUD操作的标准命名
+   - 批量操作命名规范
+   - 条件查询命名规范
+   - 业务特定操作命名规范
+   ```
 
-        @ApiOperation(value = "查询用户分页列表", notes = "通过POST请求分页查询用户信息")
-        @PostMapping("/page-query") // 具体操作路径
-        public Result<PageResult<UserPageResp>> pageUser(@RequestBody @Valid UserPageQueryReq userPageQueryReq) {
-            // 实现代码，UserPageQueryReq 包含分页参数及查询条件
-            // 返回 Result<PageResult<UserPageResp>>
-        }
-    }
-    ```
+3. **命名一致性检查**：
+   ```
+   提示词：@codebase 检查所有HTTP接口命名，识别不符合项目命名规范的接口
+   检查维度：
+   - 动词使用的一致性
+   - 路径层级的合理性
+   - 命名可读性和规范性
+   ```
 
-2.  必须包含以下内容：
-    *   接口功能描述。
-    *   **POST请求体JSON结构详细说明**（包括所有参数的名称、类型、是否必填、含义、示例值、校验规则如 JSR303 注解）。
-    *   响应体JSON结构详细说明（包括 `Result<T>` 包装结构和内部数据 `T` 的结构）。
-    *   错误码说明 (参考 `@java-error-handling-and-operations.mdc`，并列出本接口可能返回的具体业务错误码)。
-    *   完整的请求和响应示例JSON (覆盖成功和常见失败场景)。
-    *   **【推荐】**清晰说明接口的幂等性行为，以及（如果支持）客户端应如何传递幂等性令牌。
-    *   **【推荐】**对于废弃的接口或版本，使用 `@Deprecated` 注解，并在文档中明确说明废弃原因、替代接口及计划移除时间。
+### 【项目适配】请求参数智能规范
+1. **基于Cursor的参数模式分析**：
+   ```
+   提示词：@codebase 分析所有HTTP接口的请求参数模式，总结项目参数规范
+   分析内容：
+   - 参数传递方式（Body vs Query vs Path）
+   - 请求对象的继承体系（BaseReq、BaseQueryReq等）
+   - 分页参数的字段命名和类型规范
+   - 时间参数的格式约定
+   - 枚举参数的传递方式
+   ```
+
+2. **智能参数规范生成**：
+   ```
+   提示词：@codebase 基于现有请求对象分析，生成标准的请求参数模板
+   要求包含：
+   - 分页查询请求的标准结构
+   - 时间参数的统一格式
+   - 枚举参数的传递规范
+   - 参数校验注解的使用模式
+   ```
+
+3. **参数校验规范分析**：
+   ```
+   提示词：@codebase 分析现有请求对象的校验注解使用，总结参数校验规范
+   检查内容：
+   - JSR303注解的使用模式
+   - 自定义校验注解的使用
+   - 参数默认值设置规律
+   - 必填/可选参数的标识方式
+   ```
+
+### 【项目适配】响应规范智能分析
+1. **基于Cursor的响应格式分析**：
+   ```
+   提示词：@codebase 分析所有Controller方法的返回值类型，总结项目响应格式规范
+   分析内容：
+   - 统一响应包装类的使用情况（Result<T>、ApiResponse<T>等）
+   - 分页响应的数据结构模式
+   - 错误响应的格式约定
+   - 特殊业务场景的响应格式
+   ```
+
+2. **智能响应规范生成**：
+   ```
+   提示词：@codebase 基于现有响应格式分析，生成标准的响应数据模板
+   要求包含：
+   - 统一响应包装器的结构
+   - 分页数据的标准格式
+   - 错误响应的标准结构
+   - 业务数据的组织方式
+   ```
+
+3. **响应一致性检查**：
+   ```
+   提示词：@codebase 检查所有HTTP接口的响应格式，识别不符合统一规范的接口
+   检查维度：
+   - 响应包装器使用的一致性
+   - 分页字段命名的统一性
+   - 错误码和错误信息格式
+   ```
+
+### 【项目适配】接口文档智能规范
+1. **基于Cursor的文档注解分析**：
+   ```
+   提示词：@codebase 分析所有Controller类的Swagger注解使用，总结项目文档规范
+   分析内容：
+   - @Api、@ApiOperation、@ApiModelProperty等注解的使用模式
+   - 接口文档的描述规范和内容要求
+   - 请求响应示例的组织方式
+   - 错误码文档的编写规律
+   ```
+
+2. **智能文档模板生成**：
+   ```
+   提示词：@codebase 基于现有Controller文档分析，生成标准的接口文档模板
+   要求包含：
+   - Swagger注解的标准使用方式
+   - 接口描述的规范格式
+   - 参数文档的详细要求
+   - 响应文档的标准结构
+   ```
+
+3. **文档完整性检查**：
+   ```
+   提示词：@codebase 检查所有HTTP接口的文档完整性，识别缺失或不规范的文档
+   检查维度：
+   - 接口描述的完整性
+   - 参数文档的详细程度
+   - 错误码说明的覆盖性
+   - 示例数据的有效性
+   ```
 
 ---
-**附注：**
-*   所有API的实现必须严格遵守 `@java-error-handling-and-operations.mdc` 中定义的错误处理、日志记录和安全规范。
-*   对于需要保证幂等性的重要操作（特别是创建类操作，以防客户端重试导致重复创建），应考虑支持客户端传递幂等性令牌（例如，在请求头或请求体中包含 `X-Request-Id` 或 `Idempotency-Key`），服务端进行相应处理。
-*   批量操作的请求体和响应体结构应有明确规范，例如请求为一个JSON数组，响应体能区分各条记录的处理成功与失败详情。
+
+## Cursor智能辅助HTTP API开发
+
+### 【推荐】基于@codebase的API开发
+1. **完整接口生成**：
+   ```
+   提示词模板：
+   @codebase 基于现有HTTP接口模式，为 [业务模块] 生成完整的CRUD接口，包括：
+   1. Controller类定义
+   2. 请求响应对象（XxxReq/Resp）
+   3. Swagger文档注解
+   4. 参数校验注解
+   
+   要求遵循项目现有的：
+   - URL路径命名规范
+   - HTTP方法使用模式
+   - 响应格式标准
+   - 文档编写规范
+   ```
+
+2. **接口规范检查**：
+   ```
+   提示词模板：
+   @codebase 检查这个HTTP接口是否符合项目规范：
+   1. URL路径是否符合命名规范
+   2. 请求参数格式是否统一
+   3. 响应格式是否标准
+   4. 文档是否完整
+   
+   [粘贴Controller代码]
+   ```
+
+3. **批量接口优化**：
+   ```
+   提示词模板：
+   @codebase 分析项目中所有HTTP接口，识别需要优化的地方：
+   1. 不符合命名规范的接口
+   2. 响应格式不统一的接口
+   3. 文档不完整的接口
+   4. 参数校验缺失的接口
+   
+   生成优化建议和修改方案
+   ```
+
+### 【推荐】基于@codebase的问题诊断
+1. **接口异常分析**：
+   ```
+   提示词模板：
+   @codebase 分析这个HTTP接口异常，基于项目现有实现提供解决方案：
+   [粘贴异常日志和相关代码]
+   
+   请检查：
+   1. 参数校验是否正确
+   2. 响应格式是否符合规范
+   3. 错误处理是否完整
+   4. 业务逻辑是否合理
+   ```
+
+2. **性能优化建议**：
+   ```
+   提示词模板：
+   @codebase 分析这个HTTP接口的性能问题，对比项目中的高性能实现：
+   [描述性能问题和相关代码]
+   
+   分析维度：
+   1. 参数校验的效率
+   2. 数据库查询优化
+   3. 响应数据组装
+   4. 缓存策略使用
+   ```
+
+3. **安全漏洞检查**：
+   ```
+   提示词模板：
+   @codebase 检查这个HTTP接口的安全性，基于项目安全规范：
+   [粘贴接口代码]
+   
+   检查内容：
+   1. 参数校验的完整性
+   2. 权限控制的正确性
+   3. 敏感数据的保护
+   4. 注入攻击的防护
+   ```
+
+---
+
+## 智能化规范集成
+
+### 【重要】与其他规范的智能协同
+1. **错误处理集成**：
+   ```
+   提示词：@codebase 基于 [java-error-handling-and-operations.mdc](mdc:.cursor/rules/java-error-handling-and-operations.mdc) 规范，确保HTTP接口的错误处理符合项目标准
+   ```
+
+2. **数据库操作集成**：
+   ```
+   提示词：@codebase 基于 [java-data-persistence.mdc](mdc:.cursor/rules/java-data-persistence.mdc) 规范，优化HTTP接口中的数据库操作
+   ```
+
+3. **RPC调用集成**：
+   ```
+   提示词：@codebase 基于 [java-rpc-service.mdc](mdc:.cursor/rules/java-rpc-service.mdc)规范，确保HTTP接口中的RPC调用符合标准
+   ```
+
+### 【核心价值】智能化带来的效果
+- **🎯 精准适配**：AI理解项目上下文，生成的代码完全符合项目风格
+- **⚡ 效率提升**：从手工分析到AI智能生成，开发效率提升10倍
+- **🛡️ 质量保证**：AI检查确保代码规范性和一致性
+- **📚 知识传承**：项目经验通过AI规范化传递给团队成员

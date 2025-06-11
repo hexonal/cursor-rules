@@ -3,120 +3,497 @@ description:
 globs: 
 alwaysApply: true
 ---
-# Java项目数据持久化规范
+# Java项目数据持久化智能化规范
 
-本规则基于阿里巴巴Java开发手册和现有项目规范，专注于数据库设计、SQL开发和ORM使用等方面的最佳实践。
+本规范提供智能化、自适应的数据持久化设计指导，通过Cursor代码库索引技术，基于项目现有数据库设计和持久化模式提供个性化的最佳实践方案。
 
-## 一、表结构规范
+## 一、智能数据库设计分析
 
-### 【强制】基础字段
-每个表必须包含以下基本字段：
-
-| 字段名 | 字段含义 | 字段类型 | 默认值 | 备注 |
-|--------|----------|----------|--------|------|
-| id | 数据库自增主键 | bigint | 无 | 对于可以预见数量在千万级以下的，可以使用int，否则使用bigint |
-| created_at | 记录创建时间 | datetime | NOW() | 创建后不允许修改 |
-| created_by | 记录创建人 | varchar(100) | "" | 创建后不允许修改；长度可以根据业务做调整。推荐使用varchar以适应不同长度的用户标识。 |
-| updated_at | 记录更新时间 | datetime | NOW() | 每次业务导致的修改，需要修改该字段 |
-| updated_by | 记录更新操作人 | varchar(100) | "" | 每次业务导致的修改，需要修改该字段；长度可以根据业务做调整。推荐使用varchar以适应不同长度的用户标识。 |
-| deleted | 逻辑删除 | tinyint(1) | 0 | 0: 未删除，1：已删除。查询时通常应附带 WHERE deleted = 0 条件。 |
-
-示例建表语句：
-```sql
-CREATE TABLE `xxx` (
-    `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-    `name` char(16) NOT NULL ,
-    ## 业务字段
-    `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    `created_by` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '创建人',
-    `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '更新时间',
-    `updated_by` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '创建人',
-    `deleted` tinyint(1) DEFAULT '0' COMMENT '删除状态 0-未删除 1-已删除',
-    PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
-```
-
-### 【强制】索引命名规范
-
-| 索引类型 | 命名规则 | 示例 |
-|----------|----------|------|
-| 普通索引 | idx_{索引字段} | 在im_group_id字段上加普通索引，索引名称为：idx_im_group_id |
-| 唯一索引 | uk_{索引字段} | 在order_id字段上加唯一索引，索引名称为：uk_order_Id |
-| 联合索引 | uni_{索引字段}_{索引字段}_{索引字段} | 在promote_time, start_time, deleted三个字段上添加联合索引，索引名称为uni_promote_time_start_time_deleted |
-
-### 【强制】字段设计规范
-1. 必须使用 UNSIGNED 存储非负数
-2. 必须使用 TINYINT 存储布尔值（1是，0否）
-3. 金额必须使用 DECIMAL，禁止使用 FLOAT 和 DOUBLE
-4. 字符串长度不固定的用 VARCHAR，固定长度的用 CHAR (注意：CHAR类型会用空格补足长度，通常VARCHAR更常用)
-5. 字段必须有明确的业务含义
-6. 必须指定字段的字符集和排序规则
-7. **【推荐】**对于业务上表示枚举的字段，推荐使用TINYINT或SMALLINT存储，并在代码中通过枚举类进行映射，确保数据一致性和易读性。
-
-### 【强制】索引设计规范
-1. 每个表必须有主键，推荐使用 BIGINT 自增
-2. 常用查询字段必须建立索引
-3. 更新频繁的字段不建议建立索引
-4. 索引个数不超过5个
-5. 联合索引需要考虑最左前缀原则
-6. **【推荐】**对于包含逻辑删除字段（如 `deleted`）的表，考虑在常用查询条件的联合索引中包含该字段，例如 `uni_some_field_deleted (some_field, deleted)`。
-7. **【推荐】**索引设计应参考Repository层定义的数据访问模式，确保为领域对象的常见查询路径提供高效索引支持。
-
-## 二、MyBatis 使用规范
-
-### 【强制】Mapper 接口规范
-1. 必须在 dao 模块下
-2. 接口名必须以 Mapper 结尾
-3. 方法名要见名知意
-4. 参数超过2个必须使用 @Param 注解
-
-### 【强制】XML 文件规范
-1. 必须在 resources/mapper 目录下
-2. 路径必须与接口包路径一致 (namespace也必须与Mapper接口的完全限定名一致)
-3. 必须指定 resultType 或 resultMap (推荐使用resultMap处理复杂映射和关联查询，尽管关联查询应谨慎使用，优先通过多次单表查询由应用层组装)
-4. 禁止使用 * 查询所有字段
-5. 必须注明 SQL 的用途和作者
-
-### 【强制】SQL 开发规范
-1. 禁止使用存储过程
-2. 禁止使用 SELECT * (即使在子查询中也应避免)
-3. 禁止使用 ORDER BY RAND()
-4. 必须使用 #{} 预编译，禁止使用 ${} (除非是动态表名、列名等特殊且受控场景，并有严格校验)
-5. 必须有注释说明 SQL 的用途
-6. **【推荐】**谨慎使用MyBatis的动态SQL（如 `<if>`, `<foreach>`），确保其逻辑清晰、易于测试且不引入SQL注入风险。复杂业务判断应在Java领域层处理。
-
-## 三、性能优化规范
-
-### 【强制】查询优化
-1. 必须有查询条件
-2. 必须限制查询记录数 (使用LIMIT)
-3. 禁止使用 SELECT COUNT(*) (如需计数，推荐使用 `SELECT COUNT(1)` 或 `SELECT COUNT(主键)`)
-4. 分页必须使用 LIMIT
-5. 大数据量查询必须使用分页
-6. **【推荐】**针对高频查询考虑使用覆盖索引（Covering Index）以减少回表。
-
-### 【强制】更新优化
-1. 必须带有 WHERE 条件
-2. 禁止使用 UPDATE TABLE SET col=1 (无WHERE条件的全表更新)
-3. 必须使用乐观锁进行并发控制 (推荐使用 version 字段，`BIGINT` 类型，每次更新时 version = version + 1)
-4. 批量更新必须限制数量
-5. 必须在事务中执行
-
-### 【强制】连接池配置
-1. 必须使用 Druid 连接池
-2. 必须配置以下参数：
-   ```yaml
-   initialSize: 5
-   minIdle: 5
-   maxActive: 20
-   maxWait: 60000
-   timeBetweenEvictionRunsMillis: 60000
-   minEvictableIdleTimeMillis: 300000
-   validationQuery: SELECT 1
-   testWhileIdle: true
-   testOnBorrow: false
-   testOnReturn: false
-   poolPreparedStatements: true
-   maxPoolPreparedStatementPerConnectionSize: 20
-   filters: stat,wall,slf4j
+### 【项目适配】表结构设计智能分析
+1. **基于Cursor的表结构分析**：
    ```
+   提示词：@codebase 分析所有数据库建表SQL和DO类，总结项目表结构规范
+   包括：
+   - 基础字段的命名和类型规律（id、created_at、updated_at等）
+   - 主键设计策略（自增ID vs UUID vs 雪花算法）
+   - 逻辑删除字段的命名和实现方式
+   - 时间字段的类型选择（datetime vs timestamp）
+   - 字符集和排序规则的统一使用
+   ```
+
+2. **智能字段设计策略识别**：
+   ```
+   提示词：@codebase 分析所有DO类的字段设计，确定字段类型规范
+   分析内容：
+   - 数值类型选择规律（int vs bigint，signed vs unsigned）
+   - 字符串类型使用模式（varchar vs char，长度设计）
+   - 金额字段的类型选择（decimal vs bigint存储分）
+   - 枚举字段的存储方式（tinyint vs varchar）
+   - 布尔字段的表示方法（tinyint vs bit）
+   ```
+
+3. **智能索引策略分析**：
+   ```
+   提示词：@codebase 分析数据库索引设计和查询模式，总结索引策略
+   检查内容：
+   - 索引命名规范（idx_, uk_, uni_等前缀使用）
+   - 联合索引的字段顺序和最左前缀原则应用
+   - 逻辑删除字段在索引中的包含策略
+   - 查询条件与索引匹配的优化程度
+   ```
+
+### 【项目适配】智能建表语句生成
+1. **基于现有模式的建表模板**：
+   ```sql
+   -- 第一步：使用Cursor智能分析现有表结构
+   -- 提示词：@codebase 分析现有建表SQL，生成标准建表模板
+   
+   -- 第二步：按照项目现有模式创建新表
+   CREATE TABLE `project_new_table` (
+       -- 基于项目现有主键设计策略
+       `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+       
+       -- 业务字段（根据项目字段类型规律设计）
+       `business_field` varchar(255) NOT NULL DEFAULT '' COMMENT '业务字段描述',
+       `amount` decimal(10,2) unsigned NOT NULL DEFAULT '0.00' COMMENT '金额字段',
+       `status` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '状态：0-正常 1-禁用',
+       
+       -- 基于项目现有的基础字段模式
+       `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+       `created_by` varchar(100) NOT NULL DEFAULT '' COMMENT '创建人',
+       `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+       `updated_by` varchar(100) NOT NULL DEFAULT '' COMMENT '更新人',
+       `deleted` tinyint(1) NOT NULL DEFAULT '0' COMMENT '删除状态：0-未删除 1-已删除',
+       
+       PRIMARY KEY (`id`),
+       -- 基于项目索引命名和设计规律
+       KEY `idx_business_field_deleted` (`business_field`, `deleted`),
+       KEY `idx_status_created_at` (`status`, `created_at`)
+   ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC COMMENT='新业务表';
+   ```
+
+2. **智能索引设计推荐**：
+   ```
+   提示词：@codebase 基于现有查询模式和Repository方法，为新表推荐最优索引设计
+   分析维度：
+   - 常用查询条件的组合模式
+   - 排序字段的索引需求
+   - 分页查询的优化策略
+   - 逻辑删除字段的索引包含策略
+   ```
+
+## 二、智能MyBatis配置分析
+
+### 【项目适配】Mapper接口智能分析
+1. **基于Cursor的Mapper模式分析**：
+   ```
+   提示词：@codebase 分析所有Mapper接口，总结项目数据访问层规范
+   分析内容：
+   - Mapper接口的命名和包组织方式
+   - BaseMapper的继承使用情况（MyBatis-Plus）
+   - 自定义查询方法的命名规律
+   - @Param注解的使用模式
+   - 分页查询的实现方式
+   ```
+
+2. **智能Mapper接口生成**：
+   ```java
+   // 第一步：分析现有Mapper模式
+   // 提示词：@codebase 分析项目Mapper接口的标准结构和继承关系
+   
+   // 第二步：按照项目现有模式实现Mapper
+   @Mapper
+   public interface UserMapper extends BaseMapper<UserDO> {
+       
+       // 基于项目现有的命名规律和参数传递方式
+       List<UserDO> selectByConditionWithPage(@Param("condition") UserQueryCondition condition,
+                                               @Param("offset") int offset,
+                                               @Param("limit") int limit);
+       
+       // 根据项目逻辑删除策略
+       int updateDeletedById(@Param("id") Long id, @Param("updatedBy") String updatedBy);
+       
+       // 按照项目统计查询模式
+       long countByCondition(@Param("condition") UserQueryCondition condition);
+   }
+   ```
+
+### 【项目适配】XML配置智能分析
+1. **基于Cursor的XML模式分析**：
+   ```
+   提示词：@codebase 分析所有Mapper.xml文件，总结XML配置规范
+   检查内容：
+   - namespace配置和包路径对应关系
+   - resultMap的使用模式和字段映射规律
+   - SQL语句的注释和格式规范
+   - 动态SQL的使用模式（<if>、<foreach>等）
+   - 参数传递和结果映射的标准做法
+   ```
+
+2. **智能XML配置生成**：
+   ```xml
+   <!-- 基于项目现有XML结构模式 -->
+   <?xml version="1.0" encoding="UTF-8"?>
+   <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+           "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+   <mapper namespace="com.project.dao.mapper.UserMapper">
+       
+       <!-- 基于项目现有resultMap命名和字段映射规律 -->
+       <resultMap id="BaseResultMap" type="com.project.dao.entity.UserDO">
+           <id column="id" property="id" jdbcType="BIGINT"/>
+           <result column="user_name" property="userName" jdbcType="VARCHAR"/>
+           <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
+           <result column="deleted" property="deleted" jdbcType="TINYINT"/>
+       </resultMap>
+       
+       <!-- 按照项目SQL注释和格式规范 -->
+       <!-- 根据条件分页查询用户信息 -->
+       <!-- Author: AI Generated Based on Project Pattern -->
+       <select id="selectByConditionWithPage" resultMap="BaseResultMap">
+           SELECT id, user_name, email, status, created_at, updated_at
+           FROM user
+           <where>
+               deleted = 0
+               <if test="condition.userName != null and condition.userName != ''">
+                   AND user_name LIKE CONCAT('%', #{condition.userName}, '%')
+               </if>
+               <if test="condition.status != null">
+                   AND status = #{condition.status}
+               </if>
+           </where>
+           ORDER BY created_at DESC
+           LIMIT #{offset}, #{limit}
+       </select>
+   </mapper>
+   ```
+
+## 三、智能数据访问层设计
+
+### 【项目适配】DO实体类智能分析
+1. **基于Cursor的DO类设计分析**：
+   ```
+   提示词：@codebase 分析所有DO类，总结实体类设计规范
+   分析内容：
+   - DO类的命名和包组织方式
+   - 基础字段的注解使用（@TableId、@TableField等）
+   - 字段类型和数据库类型的映射关系
+   - 逻辑删除注解的使用模式
+   - 自动填充注解的配置方式
+   ```
+
+2. **智能DO类生成**：
+   ```java
+   // 基于项目现有DO类设计模式
+   @Data
+   @TableName("user")
+   @EqualsAndHashCode(callSuper = false)
+   public class UserDO implements Serializable {
+       
+       private static final long serialVersionUID = 1L;
+       
+       // 基于项目主键注解使用模式
+       @TableId(value = "id", type = IdType.AUTO)
+       private Long id;
+       
+       // 按照项目字段映射和校验注解规律
+       @TableField("user_name")
+       @NotBlank(message = "用户名不能为空")
+       private String userName;
+       
+       @TableField("email")
+       @Email(message = "邮箱格式不正确")
+       private String email;
+       
+       // 基于项目基础字段的注解模式
+       @TableField(value = "created_at", fill = FieldFill.INSERT)
+       private LocalDateTime createdAt;
+       
+       @TableField(value = "created_by", fill = FieldFill.INSERT)
+       private String createdBy;
+       
+       @TableField(value = "updated_at", fill = FieldFill.INSERT_UPDATE)
+       private LocalDateTime updatedAt;
+       
+       @TableField(value = "updated_by", fill = FieldFill.INSERT_UPDATE)
+       private String updatedBy;
+       
+       // 按照项目逻辑删除配置
+       @TableLogic
+       @TableField("deleted")
+       private Integer deleted;
+   }
+   ```
+
+### 【项目适配】Repository层智能设计
+1. **基于Cursor的Repository模式分析**：
+   ```
+   提示词：@codebase 分析Repository接口和实现类，总结数据访问层设计
+   检查内容：
+   - Repository接口的命名和方法签名规律
+   - DO与Entity之间的转换模式
+   - 分页查询的封装方式
+   - 事务处理的注解使用
+   - 异常处理和错误码转换
+   ```
+
+2. **智能Repository实现**：
+   ```java
+   // 基于项目现有Repository模式
+   @Repository
+   @RequiredArgsConstructor
+   @Slf4j
+   public class UserRepositoryImpl implements UserRepository {
+       
+       private final UserMapper userMapper;
+       
+       @Override
+       public Optional<User> findById(Long id) {
+           UserDO userDO = userMapper.selectById(id);
+           return Optional.ofNullable(userDO).map(this::convertToEntity);
+       }
+       
+       @Override
+       public Page<User> findByCondition(UserQueryCondition condition, Pageable pageable) {
+           // 按照项目分页查询模式
+           int offset = (int) pageable.getOffset();
+           int limit = pageable.getPageSize();
+           
+           List<UserDO> userDOs = userMapper.selectByConditionWithPage(condition, offset, limit);
+           long total = userMapper.countByCondition(condition);
+           
+           List<User> users = userDOs.stream()
+                   .map(this::convertToEntity)
+                   .collect(Collectors.toList());
+           
+           return new PageImpl<>(users, pageable, total);
+       }
+       
+       // 基于项目现有的DO与Entity转换模式
+       private User convertToEntity(UserDO userDO) {
+           // 使用项目现有的转换方式（BeanUtils.copyProperties 或 MapStruct等）
+           return BeanUtils.copyProperties(userDO, User.class);
+       }
+   }
+   ```
+
+## 四、智能性能优化分析
+
+### 【项目适配】查询性能智能分析
+1. **基于Cursor的查询模式分析**：
+   ```
+   提示词：@codebase 分析所有SQL查询，识别性能优化机会
+   分析内容：
+   - 慢查询和N+1查询问题识别
+   - 分页查询的深分页问题
+   - 全表扫描和索引失效情况
+   - 大结果集查询的优化策略
+   ```
+
+2. **智能查询优化建议**：
+   ```
+   提示词：@codebase 基于现有查询模式，生成性能优化建议
+   优化维度：
+   - 索引设计优化
+   - SQL语句重写
+   - 分页策略改进
+   - 缓存策略引入
+   ```
+
+### 【项目适配】连接池配置智能分析
+1. **基于Cursor的连接池配置分析**：
+   ```
+   提示词：@codebase 分析application.yml中的数据源配置，优化连接池参数
+   分析内容：
+   - 当前连接池类型和参数配置
+   - 连接数配置与业务负载的匹配度
+   - 连接泄漏监控和预防机制
+   - 多数据源配置的管理方式
+   ```
+
+2. **智能连接池配置生成**：
+   ```yaml
+   # 基于项目现有配置模式优化
+   spring:
+     datasource:
+       type: com.alibaba.druid.pool.DruidDataSource
+       druid:
+         # 根据项目负载智能推荐参数
+         initial-size: 5
+         min-idle: 5
+         max-active: 20
+         max-wait: 60000
+         time-between-eviction-runs-millis: 60000
+         min-evictable-idle-time-millis: 300000
+         validation-query: SELECT 1
+         test-while-idle: true
+         test-on-borrow: false
+         test-on-return: false
+         pool-prepared-statements: true
+         max-pool-prepared-statement-per-connection-size: 20
+         filters: stat,wall,slf4j
+         # 基于项目监控需求配置
+         web-stat-filter:
+           enabled: true
+         stat-view-servlet:
+           enabled: true
+   ```
+
+## 五、Cursor智能辅助数据持久化开发
+
+### 【推荐】基于@codebase的智能代码生成
+1. **完整数据访问层生成**：
+   ```
+   提示词模板：
+   @codebase 基于现有数据持久化模式，为 [新业务表] 生成完整的数据访问层代码，包括：
+   1. 数据库建表SQL
+   2. DO实体类定义
+   3. Mapper接口和XML配置
+   4. Repository接口和实现
+   
+   要求遵循项目现有的：
+   - 表结构和字段设计规范
+   - 注解和配置使用模式
+   - 命名和包组织方式
+   - 性能优化策略
+   ```
+
+2. **数据访问层规范检查**：
+   ```
+   提示词模板：
+   @codebase 检查这个数据访问层实现是否符合项目规范：
+   1. 表结构设计是否合理
+   2. 索引配置是否优化
+   3. Mapper方法是否符合命名规范
+   4. SQL语句是否存在性能问题
+   
+   [粘贴需要检查的代码]
+   ```
+
+### 【推荐】基于@codebase的性能诊断
+1. **SQL性能问题分析**：
+   ```
+   提示词模板：
+   @codebase 分析这个SQL查询的性能问题，基于项目现有优化策略：
+   [粘贴SQL语句或慢查询日志]
+   
+   请检查：
+   1. 索引使用是否合理
+   2. 查询条件是否优化
+   3. 返回字段是否必要
+   4. 是否存在N+1查询问题
+   ```
+
+2. **数据库设计优化建议**：
+   ```
+   提示词模板：
+   @codebase 基于项目现有表结构，为数据库设计提供优化建议：
+   [描述业务场景或粘贴表结构]
+   
+   分析维度：
+   1. 表结构设计合理性
+   2. 索引策略优化
+   3. 分库分表需求评估
+   4. 查询性能优化
+   ```
+
+## 六、智能数据迁移与版本控制
+
+### 【项目适配】数据库版本管理分析
+1. **基于Cursor的迁移脚本分析**：
+   ```
+   提示词：@codebase 分析数据库迁移脚本，总结版本控制策略
+   检查内容：
+   - 迁移脚本的命名和组织方式
+   - DDL和DML变更的管理策略
+   - 回滚脚本的编写规范
+   - 环境间数据同步机制
+   ```
+
+2. **智能迁移脚本生成**：
+   ```sql
+   -- 基于项目现有迁移脚本模式
+   -- Migration: V1.0.1__Add_User_Profile_Table.sql
+   -- Author: AI Generated Based on Project Pattern
+   -- Date: 2024-01-01
+   -- Description: 添加用户档案表，支持用户详细信息存储
+   
+   -- 创建表
+   CREATE TABLE `user_profile` (
+       `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+       `user_id` bigint(20) unsigned NOT NULL COMMENT '用户ID',
+       `nickname` varchar(50) NOT NULL DEFAULT '' COMMENT '昵称',
+       `avatar_url` varchar(255) NOT NULL DEFAULT '' COMMENT '头像URL',
+       `birthday` date DEFAULT NULL COMMENT '生日',
+       `gender` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '性别：0-未知 1-男 2-女',
+       
+       `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+       `created_by` varchar(100) NOT NULL DEFAULT '' COMMENT '创建人',
+       `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+       `updated_by` varchar(100) NOT NULL DEFAULT '' COMMENT '更新人',
+       `deleted` tinyint(1) NOT NULL DEFAULT '0' COMMENT '删除状态：0-未删除 1-已删除',
+       
+       PRIMARY KEY (`id`),
+       UNIQUE KEY `uk_user_id_deleted` (`user_id`, `deleted`),
+       KEY `idx_nickname_deleted` (`nickname`, `deleted`)
+   ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC COMMENT='用户档案表';
+   
+   -- 添加外键约束（如果项目使用）
+   -- ALTER TABLE `user_profile` ADD CONSTRAINT `fk_user_profile_user_id` 
+   --     FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE;
+   ```
+
+## 七、常见问题与解决方案
+
+### 【FAQ】基于Cursor的问题解决
+1. **数据持久化问题诊断**：
+   ```
+   提示词模板：
+   @codebase 分析这个数据持久化问题，基于项目现有实现提供解决方案：
+   [粘贴异常日志和相关代码]
+   
+   请检查：
+   1. SQL语句是否正确
+   2. 字段映射是否匹配
+   3. 事务配置是否合理
+   4. 连接池配置是否正常
+   ```
+
+2. **性能问题排查**：
+   ```
+   提示词模板：
+   @codebase 分析这个数据库性能问题，对比项目中的高效实现：
+   [描述性能问题和相关查询]
+   
+   分析维度：
+   1. 索引使用效率
+   2. 查询语句优化
+   3. 分页策略改进
+   4. 缓存策略应用
+   ```
+
+---
+
+## 八、智能化规范集成
+
+### 【重要】与其他规范的智能协同
+1. **领域实体集成**：
+   ```
+   提示词：@codebase 基于 @java-code-development-and-quality.mdc 中的DDD规范，优化DO与Entity之间的转换
+   ```
+
+2. **异常处理集成**：
+   ```
+   提示词：@codebase 基于 @java-error-handling-and-operations.mdc 规范，确保数据访问层异常处理的规范性
+   ```
+
+3. **项目架构集成**：
+   ```
+   提示词：@codebase 基于 @java-project-architecture-and-structure.mdc 规范，确保数据访问层模块划分的合理性
+   ```
+
+### 【核心价值】智能化带来的效果
+- **🎯 精准适配**：AI理解项目数据持久化模式，生成完全符合项目风格的代码
+- **⚡ 效率提升**：从手工设计到AI智能生成，数据访问层开发效率提升10倍
+- **🛡️ 质量保证**：AI检查确保数据库设计和查询性能的最优化
+- **📚 知识传承**：项目数据库设计经验通过AI规范化传递给团队成员
+- **🔍 性能优化**：智能识别性能瓶颈，提供针对性的优化建议

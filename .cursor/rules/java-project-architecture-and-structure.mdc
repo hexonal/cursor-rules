@@ -9,34 +9,48 @@ alwaysApply: true
 
 ## 一、基础框架要求
 
-### 【强制】技术栈版本
-1. Java版本：1.8 (战略规划：考虑逐步迁移至新的LTS版本如Java 17，以利用新特性和性能改进)
-2. Spring Boot：2.x (战略规划：随Java版本升级，考虑迁移至Spring Boot 3.x)
-3. Dubbo：2.7.8
-4. Nacos：2.0
-5. Apollo：2.0.0
-6. Redis + Jedis：3.3
-7. MySQL：5.7+
-8. Elasticsearch：7.16
-9. MongoDB：最新稳定版
-10. RocketMQ：最新稳定版
-11. XXL-JOB：2.3.0
-12. Maven：3.6.3
-13. Resilience4j：最新稳定版
-14. Log4j2：最新稳定版
+### 【智能】技术栈版本管理
+1. **动态版本适配策略**：
+   - **LTS优先**：优先选择长期支持版本，平衡稳定性与创新性
+   - **安全驱动**：基于安全漏洞评估自动推荐版本升级
+   - **兼容性评估**：智能分析版本升级对项目的影响
+   - **渐进式升级**：支持分阶段、低风险的版本升级路径
 
-### 【强制】项目特性
-1. 所有项目必须是多模块项目
-2. 必须使用 Spring Boot Starter 进行项目初始化
-3. 必须使用 MyBatis-Plus 进行数据库操作
-4. 必须使用 Log4j2 进行日志记录
-5. 必须使用 Apollo 进行配置管理
+2. **核心技术栈版本基线**：
+   - **Java**：支持 1.8/11/17 LTS版本，推荐策略化选择
+   - **Spring Boot**：2.x系列（兼容性优先）/ 3.x系列（创新性优先）
+   - **数据库**：MySQL 5.7+/8.0+，PostgreSQL等多数据库支持
+   - **消息中间件**：RocketMQ/Kafka等，根据场景智能推荐
+   - **微服务框架**：Dubbo/Spring Cloud，支持多栈并存
+   - **配置管理**：Apollo/Nacos/Spring Config，灵活选择
+
+3. **智能升级建议**：
+   - **自动扫描**：定期扫描依赖版本状态和安全风险
+   - **影响评估**：评估版本升级对现有代码的影响范围
+   - **升级路径**：提供详细的升级步骤和回滚预案
+
+### 【智能】项目特性适配
+1. **架构模式智能推荐**：
+   - **单体应用**：自动检测并优化单模块项目结构
+   - **多模块项目**：智能规划模块划分和依赖关系
+   - **微服务架构**：支持服务拆分和治理最佳实践
+
+2. **技术选型自适应**：
+   - **数据访问层**：MyBatis-Plus（推荐）/ JPA / 原生MyBatis，根据项目特点选择
+   - **日志框架**：Log4j2（推荐）/ Logback，支持无缝切换
+   - **配置管理**：Apollo（推荐）/ Nacos / Spring Config，智能检测并适配
+   - **启动框架**：Spring Boot Starter，自动优化依赖配置
+
+3. **项目特性智能检测**：
+   - **自动分析**：扫描现有项目特性，推荐最佳技术栈组合
+   - **渐进式优化**：支持现有项目的逐步技术栈升级
+   - **兼容性保证**：确保技术选型变更不影响业务连续性
 
 ## 二、项目结构规范
 
-### 【强制】模块划分
+### 【智能】模块划分策略
 
-项目应采用多模块Maven结构，以实现关注点分离和高内聚低耦合。以下模块是标准划分，旨在支持包括DDD在内的分层架构思想：
+项目应采用智能化的多模块Maven结构，能够根据项目特点自动适配最佳的模块划分方案。支持多种架构模式，包括传统分层、DDD、微服务等：
 
 1. **`xxx-api` 模块**：定义对外提供的服务契约，主要是RPC接口及其相关的请求/响应对象（DTOs）和枚举。
    - 包含RPC服务接口 (例如 `UserRpcService`)
@@ -77,7 +91,7 @@ alwaysApply: true
    - 通用工具类 (`utils`)。
    - 应用范围的常量定义 (`constants`)。
    - 应用范围的、非领域特定的枚举定义 (`enums`)。
-   - 通用异常基类 (`exception`) (若 `com.hexonal.ht.common` 无法满足)。
+   - 通用异常基类 (`exception`) (智能适配现有通用组件库或自建)。
    - 通用配置类 (如果适用)。
 
 7. **`xxx-integration` 模块**：用于集成外部第三方服务或系统。
@@ -85,67 +99,77 @@ alwaysApply: true
    - 在DDD中，这部分常作为防腐层（Anti-Corruption Layer, ACL）的一部分，将外部模型的变动与核心领域隔离开。
    - 接口通常定义在 `biz` (应用层或领域层)，实现放在此模块。
 
-*(【DDD增强】对于大型复杂项目，可以考虑将核心领域模型 (`Entities`, `Value Objects`, `Domain Service interfaces`, `Repository interfaces`, `Domain Events`) 提取到独立的 `xxx-domain` 模块，使其不依赖任何基础设施或应用层代码，实现更纯粹的领域隔离。此时，`xxx-biz` 模块将主要包含应用服务和领域服务的实现。)*
+*(【项目适配】对于大型复杂项目，智能推荐将核心领域模型 (`Entities`, `Value Objects`, `Domain Service interfaces`, `Repository interfaces`, `Domain Events`) 提取到独立的 `xxx-domain` 模块，使其不依赖任何基础设施或应用层代码。系统会根据项目复杂度自动评估是否需要此种模块拆分。)*
 
-### 【强制】包结构规范
-1. 基础包名前缀：com.hexonal (或 com.yp)
-2. 模块包名 (以项目代码为 `myproject`，业务模块为 `order` 为例):
+### 【智能】包结构规范
+1. **自适应包名策略**：
+   - **智能检测**：自动识别项目现有的包名结构，如 `com.{company}.{project}` 
+   - **动态适配**：根据 Maven `groupId` 自动推断项目包名前缀
+   - **兼容多种格式**：支持 `com.company.project`、`com.company.product.module` 等多层次结构
+   - **历史兼容**：保持对现有项目包名的向后兼容
+
+2. **包结构模式自学习**：根据项目实际情况智能匹配最适合的包结构模式
    ```
-   com.hexonal.myproject.api          // API定义 (RPC)
-     ├── rpc.order.service      // RPC服务接口 (e.g., com.hexonal.myproject.api.rpc.order.service.OrderRpcService)
-     ├── rpc.order.request      // RPC请求对象
-     └── rpc.order.response     // RPC响应对象
-     └── rpc.order.enums        // RPC API相关的枚举
+   {company}.{project}.api          // API定义 (RPC)
+     ├── rpc.{module}.service     // RPC服务接口
+     ├── rpc.{module}.request     // RPC请求对象
+     ├── rpc.{module}.response    // RPC响应对象
+     └── rpc.{module}.enums       // RPC API相关的枚举
    
-   com.hexonal.myproject.api.impl     // API实现 (RPC)
-     └── rpc.order.service.impl // RPC服务实现 (e.g., com.hexonal.myproject.api.impl.rpc.order.service.impl.OrderRpcServiceImpl)
+   {company}.{project}.api.impl     // API实现 (RPC)
+     └── rpc.{module}.service.impl // RPC服务实现
    
-   com.hexonal.myproject.biz          // 业务逻辑核心
-     ├── app.order.service      // 应用服务接口 (e.g., com.hexonal.myproject.biz.app.order.service.OrderAppService)
-     ├── app.order.service.impl // 应用服务实现
-     ├── app.order.dto          // 应用服务使用的数据传输对象 (请求/响应)
-     ├── domain.order.model     // 领域模型: Entities, Value Objects, Domain Events (e.g., com.hexonal.myproject.biz.domain.order.model.Order)
-     ├── domain.order.service   // 领域服务接口与实现 (e.g., com.hexonal.myproject.biz.domain.order.service.OrderPricingDomainService)
-     ├── domain.order.repository// 仓库接口 (e.g., com.hexonal.myproject.biz.domain.order.repository.OrderRepository)
-     ├── job.order            // 定时任务
-     ├── mq.order.consumer    // 消息消费者
-     ├── mq.order.producer    // 消息生产者
-     └── // ... 其他业务组件 (如 specific utils for this biz module)
+   {company}.{project}.biz          // 业务逻辑核心
+     ├── app.{module}.service      // 应用服务接口
+     ├── app.{module}.service.impl // 应用服务实现
+     ├── app.{module}.dto          // 应用服务使用的数据传输对象
+     ├── domain.{module}.model     // 领域模型: Entities, Value Objects, Domain Events
+     ├── domain.{module}.service   // 领域服务接口与实现
+     ├── domain.{module}.repository// 仓库接口
+     ├── job.{module}             // 定时任务
+     ├── mq.{module}.consumer     // 消息消费者
+     ├── mq.{module}.producer     // 消息生产者
+     └── // ... 其他业务组件
    
-   com.hexonal.myproject.dao          // 数据访问与基础设施 (或者叫 .infrastructure)
-     ├── persistent.order.po        // 持久化对象 (DO/PO) (e.g., com.hexonal.myproject.dao.persistent.order.po.OrderPO)
-     ├── persistent.order.mapper    // MyBatis Mapper接口
-     ├── repository.order.impl  // 仓库实现 (e.g., com.hexonal.myproject.dao.repository.order.impl.OrderRepositoryImpl)
-     └── // ... 其他基础设施实现 (如缓存客户端封装)
+   {company}.{project}.dao          // 数据访问与基础设施
+     ├── persistent.{module}.po    // 持久化对象 (DO/PO)
+     ├── persistent.{module}.mapper// MyBatis Mapper接口
+     ├── repository.{module}.impl  // 仓库实现
+     └── // ... 其他基础设施实现
 
-   // 若使用独立的 xxx-domain 模块 (此处 xxx 即 myproject):
-   // com.hexonal.myproject.domain       // 纯领域模型模块
-   //   └── order.model
-   //   └── order.service (接口)
-   //   └── order.repository (接口)
-   //   └── order.event
+   // 可选的独立领域模块
+   // {company}.{project}.domain       // 纯领域模型模块
+   //   └── {module}.model
+   //   └── {module}.service (接口)
+   //   └── {module}.repository (接口)
+   //   └── {module}.event
 
-   com.hexonal.myproject.integration  // 外部集成
-     ├── acl.order.{外部系统}.adapter // 防腐层适配器
-     ├── acl.order.{外部系统}.dto     // 外部系统DTO
-     └── client.order.{外部系统}    // 外部服务客户端
+   {company}.{project}.integration  // 外部集成
+     ├── acl.{module}.{external}.adapter // 防腐层适配器
+     ├── acl.{module}.{external}.dto     // 外部系统DTO
+     └── client.{module}.{external}      // 外部服务客户端
    
-   com.hexonal.myproject.common       // 项目级公共组件 (区别于集团级common)
+   {company}.{project}.common       // 项目级公共组件
      ├── constants          
      ├── enums             // 非领域相关的通用枚举
-     ├── util              // 通用工具类 (注意避免成为垃圾桶)
+     ├── util              // 通用工具类
      └── exception         // 项目级通用异常
    
-   com.hexonal.myproject.web          // Web层 (HTTP API)
-     ├── rest.order.controller  // REST Controller (e.g., com.hexonal.myproject.web.rest.order.controller.OrderController)
-     ├── rest.order.request     // Web请求对象
-     ├── rest.order.response    // Web响应对象 (通常是 Result<SpecificResp>)
+   {company}.{project}.web          // Web层 (HTTP API)
+     ├── rest.{module}.controller  // REST Controller
+     ├── rest.{module}.request     // Web请求对象
+     ├── rest.{module}.response    // Web响应对象
      ├── interceptor       
      └── config            
    
-   // 启动类 Application.java 通常放在顶层基础包下，例如 com.hexonal.myproject
+   // 启动类 Application.java 通常放在顶层基础包下
    ```
-   *注：`com.hexonal` (或 `com.hexonal`) 为公司/集团顶级包名。示例中的 `myproject` 代表项目的核心标识，通常对应于父POM中 `groupId` 的最后一部分（例如，若父POM `groupId` 为 `com.hexonal.oms`，则 `myproject` 在包结构中对应 `oms`）。此项目核心标识应根据实际项目定名（如 `oms`, `ums`, `ht` 等）。示例中的 `order` 代表具体的业务模块，应替换为实际的模块名（如 `user`, `product` 等）。*
+   
+   **智能变量说明**：
+   - `{company}`：自动从Maven groupId或现有包结构中推断公司标识
+   - `{project}`：自动从Maven artifactId或现有包结构中推断项目标识  
+   - `{module}`：自动识别或建议业务模块名称
+   - `{external}`：外部系统标识，支持动态配置
 
 ### 【强制】资源文件规范
 1. 配置文件位置：
@@ -233,15 +257,19 @@ alwaysApply: true
    - 禁止修改已发布tag
    - 及时同步到远程仓库
 
-### 【强制】依赖管理规范
-1. 版本管理
-   - 统一在父POM中定义版本 (在 `<dependencyManagement>` 和 `<pluginManagement>` 中)
-   - 禁止在子模块中直接指定版本 (应继承父POM定义的版本)
-   - 必须使用版本管理插件 (例如 `versions-maven-plugin` 辅助版本更新检查，`maven-enforcer-plugin` 检查依赖收敛和规范)
-   - 定期更新依赖版本 (关注安全漏洞和重要修复)
-2. 依赖原则
-   - 避免依赖冲突
-   - 避免循环依赖
-   - 避免过度依赖
-   - 及时清理无用依赖
-   - **【推荐】**使用 `mvn dependency:tree` 和 IDE 工具分析并优化依赖树，确保依赖的简洁和无冲突。
+### 【智能】依赖管理规范
+1. **智能版本管理**
+   - **自动版本检测**：检测并建议最新稳定版本，关注安全漏洞修复
+   - **兼容性分析**：自动分析版本升级的兼容性影响
+   - **统一版本策略**：在父POM中智能管理版本，避免版本冲突
+   - **增量更新建议**：基于项目使用情况智能推荐版本更新策略
+
+2. **智能依赖优化**
+   - **依赖冲突自动检测**：自动识别并提供解决方案
+   - **循环依赖预警**：智能检测潜在的循环依赖风险
+   - **无用依赖清理**：定期扫描并建议清理未使用的依赖
+   - **依赖树优化**：自动分析并优化依赖结构
+
+3. **项目适配**
+   - **根据项目特性自动调整**：基于项目类型（Web、微服务、批处理等）智能推荐依赖配置
+   - **技术栈一致性检查**：确保项目依赖与团队技术栈标准保持一致
