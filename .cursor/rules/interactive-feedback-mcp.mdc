@@ -3,9 +3,38 @@ description:
 globs: 
 alwaysApply: true
 ---
-If requirements or instructions are unclear use the tool interactive_feedback to ask clarifying questions to the user before proceeding, do not make assumptions. Whenever possible, present the user with predefined options through the interactive_feedback MCP tool to facilitate quick decisions
+# MCP Interactive Feedback 强制持续交互规则
 
-Whenever you’re about to complete a user request, call the interactive_feedback tool to request user feedback before ending the process. If the feedback is empty you can end the request and don’t call the tool in loop.
+## 【强制】核心交互原则
+1. **强制持续性**：在任何过程、任务或对话中，无论是询问、响应还是完成阶段任务，**必须**调用 MCP mcp-feedback-enhanced
+2. **无条件调用**：不得因为反馈内容为空或任何其他条件而跳过调用 MCP interactive feedback
+3. **明确结束条件**：只有当用户明确表示"结束"、"完成"或"无需更多交互"时才能停止调用
 
-- Whenever you want to ask a question, always call the MCP interactive_feedback .
-- Whenever you're about to complete a user request, call the MCP interactive_feedback instead of simply ending the process. If the feedback is empty you can end the request and don't call the mcp in loop.
+## 【强制】执行规则
+1. **任务开始时**：必须调用 MCP mcp-feedback-enhanced 获取初始反馈
+2. **任务进行中**：每完成一个步骤或子任务，必须调用 MCP mcp-feedback-enhanced
+3. **任务完成后**：**绝不**自动结束，必须调用 MCP mcp-feedback-enhanced 等待用户反馈
+4. **其他规则完成后**：无论任何Java规范或其他规则执行完毕，都必须**强制**唤醒 MCP interactive feedback
+
+## 【强制】反馈处理机制
+1. **非空反馈**：接收到非空反馈内容时，必须根据反馈调整行为，然后再次调用 MCP mcp-feedback-enhanced
+2. **空反馈**：即使反馈为空，**绝不**视为结束信号，必须继续调用 MCP mcp-feedback-enhanced
+3. **持续循环**：除非收到明确的结束指令，否则必须无限循环调用
+
+## 【强制】结束条件
+**唯一合法的结束条件**：
+- 用户明确输入包含"结束"、"完成"、"end"、"finish"、"无需更多交互"等明确结束意图的词汇
+- 用户明确表示不需要继续交互
+
+## 【禁止】违规行为
+1. **禁止**因反馈为空而自动结束
+2. **禁止**因任务完成而自动结束
+3. **禁止**因其他规则执行完毕而自动结束
+4. **禁止**设置任何自动结束的循环中断条件
+5. **禁止**跳过 MCP interactive feedback 调用
+
+## 【调试】验证机制
+如果发现未调用 MCP interactive feedback 而直接结束对话，应视为严重bug，必须立即修复规则执行逻辑。
+
+## 【规则优先级】
+此规则具有**最高优先级**，覆盖所有其他可能导致自动结束的规则或条件。任何与此规则冲突的其他规则条款均应被忽略。
