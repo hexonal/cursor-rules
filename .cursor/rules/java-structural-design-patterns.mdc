@@ -1,0 +1,493 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+---
+description: Java结构型设计模式精细化应用规范
+globs: 
+alwaysApply: true
+---
+
+# Java结构型设计模式精细化应用规范
+
+本规范提供结构型设计模式（适配器模式、装饰器模式）的精细化应用指导，确保类和对象组合的规范性和可维护性。
+
+## 一、适配器模式精细化规范
+
+### 【强制】适配器模式适用场景
+```
+提示词：@codebase 检查以下场景是否需要使用适配器模式：
+1. 集成第三方系统，接口格式不匹配
+2. 新老系统对接，数据结构差异较大
+3. 多个外部服务提供相同功能但接口不同
+4. 需要统一多种数据源的访问方式
+
+如果存在以上场景，必须使用适配器模式
+```
+
+### 【强制】适配器实现规范
+1. **适配器接口定义**：
+   ```java
+   // 【强制】内部统一接口，遵循项目业务命名
+   public interface PaymentService {
+       PaymentResult pay(PaymentRequest request);
+       PaymentStatus queryPaymentStatus(String orderId);
+       RefundResult refund(RefundRequest request);
+   }
+   ```
+
+2. **适配器实现类**：
+   ```java
+   @Service("alipayAdapter")  // 【强制】必须指定Bean名称
+   @RequiredArgsConstructor
+   public class AlipayPaymentAdapter implements PaymentService {
+       
+       private final AlipayClient alipayClient;  // 第三方SDK
+       
+       @Override
+       public PaymentResult pay(PaymentRequest request) {
+           try {
+               // 【强制】第一步：参数校验
+               validatePaymentRequest(request);
+               
+               // 【强制】第二步：数据转换
+               AlipayTradeAppPayRequest alipayRequest = convertToAlipayRequest(request);
+               
+               // 【强制】第三步：调用第三方接口
+               AlipayTradeAppPayResponse alipayResponse = alipayClient.execute(alipayRequest);
+               
+               // 【强制】第四步：结果转换
+               return convertToPaymentResult(alipayResponse, request);
+               
+           } catch (AlipayApiException e) {
+               // 【强制】必须转换为项目内部异常
+               log.error("支付宝支付调用失败，订单号：{}", request.getOrderId(), e);
+               throw new ProjectBizException(ErrorCode.THIRD_PARTY_PAYMENT_FAILED, 
+                   "支付宝支付失败: " + e.getErrMsg(), e);
+           }
+       }
+       
+       // 【强制】参数校验方法
+       private void validatePaymentRequest(PaymentRequest request) {
+           if (request == null || StringUtils.isBlank(request.getOrderId())) {
+               throw new ProjectBizException(ErrorCode.INVALID_PARAMETER, "支付请求参数无效");
+           }
+           if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+               throw new ProjectBizException(ErrorCode.INVALID_PARAMETER, "支付金额无效");
+           }
+       }
+       
+       // 【强制】请求转换方法
+       private AlipayTradeAppPayRequest convertToAlipayRequest(PaymentRequest request) {
+           AlipayTradeAppPayModel model = new AlipayTradeAppPayModel();
+           model.setOutTradeNo(request.getOrderId());
+           model.setSubject(request.getSubject());
+           model.setTotalAmount(request.getAmount().toString());
+           model.setProductCode("QUICK_MSECURITY_PAY");
+           
+           AlipayTradeAppPayRequest alipayRequest = new AlipayTradeAppPayRequest();
+           alipayRequest.setBizModel(model);
+           alipayRequest.setNotifyUrl(request.getNotifyUrl());
+           
+           return alipayRequest;
+       }
+       
+       // 【强制】响应转换方法
+       private PaymentResult convertToPaymentResult(AlipayTradeAppPayResponse response, PaymentRequest request) {
+           if (!response.isSuccess()) {
+               throw new ProjectBizException(ErrorCode.THIRD_PARTY_PAYMENT_FAILED, 
+                   "支付宝返回失败: " + response.getSubMsg());
+           }
+           
+           return PaymentResult.builder()
+                   .orderId(request.getOrderId())
+                   .paymentId(response.getTradeNo())
+                   .status(PaymentStatus.SUCCESS)
+                   .paymentData(response.getBody())
+                   .build();
+       }
+       
+       @Override
+       public PaymentStatus queryPaymentStatus(String orderId) {
+           try {
+               AlipayTradeQueryRequest queryRequest = new AlipayTradeQueryRequest();
+               AlipayTradeQueryModel queryModel = new AlipayTradeQueryModel();
+               queryModel.setOutTradeNo(orderId);
+               queryRequest.setBizModel(queryModel);
+               
+               AlipayTradeQueryResponse queryResponse = alipayClient.execute(queryRequest);
+               return convertToPaymentStatus(queryResponse);
+               
+           } catch (AlipayApiException e) {
+               log.error("查询支付宝支付状态失败，订单号：{}", orderId, e);
+               throw new ProjectBizException(ErrorCode.THIRD_PARTY_QUERY_FAILED, 
+                   "查询支付状态失败: " + e.getErrMsg(), e);
+           }
+       }
+       
+       @Override
+       public RefundResult refund(RefundRequest request) {
+           try {
+               validateRefundRequest(request);
+               
+               AlipayTradeRefundRequest refundRequest = convertToAlipayRefundRequest(request);
+               AlipayTradeRefundResponse refundResponse = alipayClient.execute(refundRequest);
+               
+               return convertToRefundResult(refundResponse, request);
+               
+           } catch (AlipayApiException e) {
+               log.error("支付宝退款失败，订单号：{}", request.getOrderId(), e);
+               throw new ProjectBizException(ErrorCode.THIRD_PARTY_REFUND_FAILED, 
+                   "退款失败: " + e.getErrMsg(), e);
+           }
+       }
+       
+       private PaymentStatus convertToPaymentStatus(AlipayTradeQueryResponse response) {
+           if (!response.isSuccess()) {
+               return PaymentStatus.UNKNOWN;
+           }
+           
+           String tradeStatus = response.getTradeStatus();
+           switch (tradeStatus) {
+               case "TRADE_SUCCESS":
+               case "TRADE_FINISHED":
+                   return PaymentStatus.SUCCESS;
+               case "WAIT_BUYER_PAY":
+                   return PaymentStatus.PENDING;
+               case "TRADE_CLOSED":
+                   return PaymentStatus.CANCELLED;
+               default:
+                   return PaymentStatus.UNKNOWN;
+           }
+       }
+       
+       private void validateRefundRequest(RefundRequest request) {
+           if (request == null || StringUtils.isBlank(request.getOrderId())) {
+               throw new ProjectBizException(ErrorCode.INVALID_PARAMETER, "退款请求参数无效");
+           }
+           if (request.getRefundAmount() == null || request.getRefundAmount().compareTo(BigDecimal.ZERO) <= 0) {
+               throw new ProjectBizException(ErrorCode.INVALID_PARAMETER, "退款金额无效");
+           }
+       }
+       
+       private AlipayTradeRefundRequest convertToAlipayRefundRequest(RefundRequest request) {
+           AlipayTradeRefundModel refundModel = new AlipayTradeRefundModel();
+           refundModel.setOutTradeNo(request.getOrderId());
+           refundModel.setRefundAmount(request.getRefundAmount().toString());
+           refundModel.setRefundReason(request.getRefundReason());
+           
+           AlipayTradeRefundRequest refundRequest = new AlipayTradeRefundRequest();
+           refundRequest.setBizModel(refundModel);
+           
+           return refundRequest;
+       }
+       
+       private RefundResult convertToRefundResult(AlipayTradeRefundResponse response, RefundRequest request) {
+           if (!response.isSuccess()) {
+               throw new ProjectBizException(ErrorCode.THIRD_PARTY_REFUND_FAILED, 
+                   "支付宝退款失败: " + response.getSubMsg());
+           }
+           
+           return RefundResult.builder()
+                   .orderId(request.getOrderId())
+                   .refundId(response.getTradeNo())
+                   .refundAmount(new BigDecimal(response.getRefundFee()))
+                   .status(RefundStatus.SUCCESS)
+                   .build();
+       }
+   }
+   ```
+
+3. **适配器管理器规范**：
+   ```java
+   @Service
+   @RequiredArgsConstructor
+   public class PaymentAdapterManager {
+       
+       private final Map<String, PaymentService> paymentAdapters;
+       
+       public PaymentAdapterManager(List<PaymentService> adapters) {
+           this.paymentAdapters = adapters.stream()
+                   .collect(Collectors.toMap(
+                       adapter -> adapter.getClass().getSimpleName().replace("Adapter", "").toLowerCase(),
+                       Function.identity()
+                   ));
+       }
+       
+       public PaymentResult processPayment(String paymentType, PaymentRequest request) {
+           PaymentService adapter = paymentAdapters.get(paymentType.toLowerCase());
+           if (adapter == null) {
+               throw new ProjectBizException(ErrorCode.UNSUPPORTED_PAYMENT_TYPE, 
+                   "不支持的支付类型: " + paymentType);
+           }
+           
+           return adapter.pay(request);
+       }
+   }
+   ```
+
+## 二、装饰器模式精细化规范
+
+### 【强制】装饰器模式适用场景
+```
+提示词：@codebase 检查以下场景是否适合使用装饰器模式：
+1. 需要动态地给对象添加功能
+2. 需要透明地给对象添加职责
+3. 需要可以撤销的功能增强
+4. 继承方式会产生大量子类
+
+如果满足2个以上条件，推荐使用装饰器模式
+```
+
+### 【强制】装饰器实现规范
+1. **组件接口定义**：
+   ```java
+   // 【强制】组件接口定义核心功能
+   public interface DataProcessor {
+       ProcessResult process(DataInput input);
+       String getProcessorName();
+   }
+   ```
+
+2. **具体组件实现**：
+   ```java
+   @Component
+   public class BasicDataProcessor implements DataProcessor {
+       
+       @Override
+       public ProcessResult process(DataInput input) {
+           // 【强制】核心处理逻辑
+           log.info("开始基础数据处理");
+           
+           ProcessResult result = ProcessResult.builder()
+                   .success(true)
+                   .processedData(input.getData())
+                   .message("基础处理完成")
+                   .build();
+           
+           log.info("基础数据处理完成");
+           return result;
+       }
+       
+       @Override
+       public String getProcessorName() {
+           return "BasicDataProcessor";
+       }
+   }
+   ```
+
+3. **抽象装饰器**：
+   ```java
+   // 【强制】抽象装饰器命名：Abstract + 业务名称 + Decorator
+   public abstract class AbstractDataProcessorDecorator implements DataProcessor {
+       
+       protected final DataProcessor decoratedProcessor;
+       
+       public AbstractDataProcessorDecorator(DataProcessor processor) {
+           this.decoratedProcessor = processor;
+       }
+       
+       @Override
+       public ProcessResult process(DataInput input) {
+           return decoratedProcessor.process(input);
+       }
+       
+       @Override
+       public String getProcessorName() {
+           return decoratedProcessor.getProcessorName();
+       }
+   }
+   ```
+
+4. **具体装饰器实现**：
+   ```java
+   // 【强制】具体装饰器命名：功能描述 + Decorator
+   @Component
+   public class ValidationDecorator extends AbstractDataProcessorDecorator {
+       
+       public ValidationDecorator(DataProcessor processor) {
+           super(processor);
+       }
+       
+       @Override
+       public ProcessResult process(DataInput input) {
+           // 【强制】前置增强
+           log.info("开始数据校验装饰");
+           validateInput(input);
+           
+           // 【强制】调用被装饰对象
+           ProcessResult result = super.process(input);
+           
+           // 【强制】后置增强
+           validateResult(result);
+           log.info("数据校验装饰完成");
+           
+           return result;
+       }
+       
+       @Override
+       public String getProcessorName() {
+           return "ValidationDecorator(" + super.getProcessorName() + ")";
+       }
+       
+       private void validateInput(DataInput input) {
+           if (input == null || input.getData() == null) {
+               throw new ProjectBizException(ErrorCode.INVALID_INPUT, "输入数据不能为空");
+           }
+           
+           if (input.getData().isEmpty()) {
+               throw new ProjectBizException(ErrorCode.INVALID_INPUT, "输入数据不能为空集合");
+           }
+       }
+       
+       private void validateResult(ProcessResult result) {
+           if (result == null) {
+               throw new ProjectBizException(ErrorCode.PROCESS_RESULT_NULL, "处理结果不能为空");
+           }
+           
+           if (!result.isSuccess() && StringUtils.isBlank(result.getMessage())) {
+               throw new ProjectBizException(ErrorCode.INVALID_RESULT, "失败结果必须包含错误信息");
+           }
+       }
+   }
+   
+   @Component
+   public class LoggingDecorator extends AbstractDataProcessorDecorator {
+       
+       public LoggingDecorator(DataProcessor processor) {
+           super(processor);
+       }
+       
+       @Override
+       public ProcessResult process(DataInput input) {
+           long startTime = System.currentTimeMillis();
+           
+           log.info("开始处理数据，处理器：{}，输入数据大小：{}", 
+               getProcessorName(), input.getData().size());
+           
+           try {
+               ProcessResult result = super.process(input);
+               
+               long endTime = System.currentTimeMillis();
+               log.info("数据处理完成，耗时：{}ms，结果：{}", 
+                   endTime - startTime, result.isSuccess() ? "成功" : "失败");
+               
+               return result;
+               
+           } catch (Exception e) {
+               long endTime = System.currentTimeMillis();
+               log.error("数据处理异常，耗时：{}ms", endTime - startTime, e);
+               throw e;
+           }
+       }
+       
+       @Override
+       public String getProcessorName() {
+           return "LoggingDecorator(" + super.getProcessorName() + ")";
+       }
+   }
+   
+   @Component
+   public class CachingDecorator extends AbstractDataProcessorDecorator {
+       
+       private final Cache<String, ProcessResult> cache;
+       
+       public CachingDecorator(DataProcessor processor, Cache<String, ProcessResult> cache) {
+           super(processor);
+           this.cache = cache;
+       }
+       
+       @Override
+       public ProcessResult process(DataInput input) {
+           String cacheKey = generateCacheKey(input);
+           
+           // 【强制】先检查缓存
+           ProcessResult cachedResult = cache.getIfPresent(cacheKey);
+           if (cachedResult != null) {
+               log.info("从缓存获取处理结果，key：{}", cacheKey);
+               return cachedResult;
+           }
+           
+           // 【强制】缓存未命中，执行处理
+           ProcessResult result = super.process(input);
+           
+           // 【强制】缓存结果（仅缓存成功结果）
+           if (result.isSuccess()) {
+               cache.put(cacheKey, result);
+               log.info("处理结果已缓存，key：{}", cacheKey);
+           }
+           
+           return result;
+       }
+       
+       @Override
+       public String getProcessorName() {
+           return "CachingDecorator(" + super.getProcessorName() + ")";
+       }
+       
+       private String generateCacheKey(DataInput input) {
+           return DigestUtils.md5Hex(input.getData().toString());
+       }
+   }
+   ```
+
+5. **装饰器组合管理器**：
+   ```java
+   @Service
+   @RequiredArgsConstructor
+   public class DataProcessorDecoratorManager {
+       
+       private final BasicDataProcessor basicProcessor;
+       private final Cache<String, ProcessResult> processorCache;
+       
+       public DataProcessor createProcessor(List<String> decoratorTypes) {
+           DataProcessor processor = basicProcessor;
+           
+           // 【强制】按顺序应用装饰器
+           for (String decoratorType : decoratorTypes) {
+               processor = applyDecorator(processor, decoratorType);
+           }
+           
+           return processor;
+       }
+       
+       private DataProcessor applyDecorator(DataProcessor processor, String decoratorType) {
+           switch (decoratorType.toLowerCase()) {
+               case "validation":
+                   return new ValidationDecorator(processor);
+               case "logging":
+                   return new LoggingDecorator(processor);
+               case "caching":
+                   return new CachingDecorator(processor, processorCache);
+               default:
+                   throw new ProjectBizException(ErrorCode.UNSUPPORTED_DECORATOR, 
+                       "不支持的装饰器类型: " + decoratorType);
+           }
+       }
+       
+       public ProcessResult processWithDecorators(DataInput input, List<String> decoratorTypes) {
+           DataProcessor processor = createProcessor(decoratorTypes);
+           return processor.process(input);
+       }
+   }
+   ```
+
+### 【强制】装饰器使用规范
+1. **装饰器顺序**：
+   - 校验装饰器应该最先应用
+   - 日志装饰器应该在业务装饰器之外
+   - 缓存装饰器应该在最外层
+   - 事务装饰器应该在缓存装饰器内层
+
+2. **装饰器组合**：
+   ```java
+   // 【推荐】标准装饰器组合顺序
+   List<String> standardDecorators = Arrays.asList(
+       "validation",    // 1. 数据校验
+       "logging",       // 2. 日志记录
+       "caching"        // 3. 结果缓存
+   );
+   
+   DataProcessor processor = decoratorManager.createProcessor(standardDecorators);
+   ```
