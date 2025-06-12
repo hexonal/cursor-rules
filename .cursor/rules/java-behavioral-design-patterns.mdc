@@ -1,0 +1,507 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Java行为型设计模式精细化应用规范
+
+本规范提供行为型设计模式（策略模式、观察者模式、模板方法模式、责任链模式、命令模式）的精细化应用指导，确保对象间交互的规范性和可维护性。
+
+## 一、策略模式精细化规范
+
+### 【强制】策略模式适用场景识别
+```
+提示词：@codebase 检查以下场景是否适合使用策略模式：
+1. 同一个业务行为有3种以上不同算法实现
+2. 算法选择逻辑复杂，包含多层if-else判断
+3. 不同算法的输入输出格式一致
+4. 算法需要在运行时动态选择
+
+如果满足3个以上条件，必须使用策略模式
+```
+
+### 【强制】策略模式实现规范
+1. **策略接口设计规范**：
+   ```java
+   // 【强制】策略接口命名：业务行为 + Strategy
+   public interface DiscountStrategy {
+       
+       // 【强制】方法命名：动词 + 业务对象
+       Money calculateDiscount(Order order, DiscountContext context);
+       
+       // 【强制】必须提供策略标识方法
+       String getStrategyType();
+       
+       // 【强制】必须提供适用性检查方法
+       boolean isApplicable(Order order, DiscountContext context);
+   }
+   ```
+
+2. **策略实现类规范**：
+   ```java
+   // 【强制】实现类命名：具体策略名 + Strategy
+   @Component
+   public class FixedAmountDiscountStrategy implements DiscountStrategy {
+       
+       // 【强制】策略类型常量
+       public static final String STRATEGY_TYPE = "FIXED_AMOUNT";
+       
+       @Override
+       public Money calculateDiscount(Order order, DiscountContext context) {
+           // 【强制】必须先检查适用性
+           if (!isApplicable(order, context)) {
+               return Money.ZERO;
+           }
+           
+           // 【强制】具体算法实现，必须包含业务规则校验
+           BigDecimal orderAmount = order.getTotalAmount().getAmount();
+           BigDecimal discountAmount = context.getDiscountAmount();
+           
+           if (orderAmount.compareTo(context.getMinOrderAmount()) < 0) {
+               throw new ProjectBizException(ErrorCode.DISCOUNT_NOT_APPLICABLE, 
+                   "订单金额不满足满减条件");
+           }
+           
+           return new Money(discountAmount, order.getTotalAmount().getCurrency());
+       }
+       
+       @Override
+       public String getStrategyType() {
+           return STRATEGY_TYPE;
+       }
+       
+       @Override
+       public boolean isApplicable(Order order, DiscountContext context) {
+           return STRATEGY_TYPE.equals(context.getDiscountType()) 
+               && order.getTotalAmount().getAmount().compareTo(context.getMinOrderAmount()) >= 0;
+       }
+   }
+   ```
+
+3. **策略管理器规范**：
+   ```java
+   @Service
+   @RequiredArgsConstructor
+   public class DiscountStrategyManager {
+       
+       // 【强制】使用Map管理策略，key为策略类型
+       private final Map<String, DiscountStrategy> strategies;
+       
+       // 【强制】构造器中初始化策略映射
+       public DiscountStrategyManager(List<DiscountStrategy> strategyList) {
+           this.strategies = strategyList.stream()
+                   .collect(Collectors.toMap(
+                       DiscountStrategy::getStrategyType,
+                       Function.identity()
+                   ));
+       }
+       
+       // 【强制】策略选择方法
+       public Money applyDiscount(Order order, DiscountContext context) {
+           DiscountStrategy strategy = strategies.get(context.getDiscountType());
+           if (strategy == null) {
+               throw new ProjectBizException(ErrorCode.UNSUPPORTED_DISCOUNT_TYPE, 
+                   "不支持的优惠类型: " + context.getDiscountType());
+           }
+           
+           return strategy.calculateDiscount(order, context);
+       }
+   }
+   ```
+
+## 二、观察者模式精细化规范
+
+### 【强制】观察者模式实现规范
+1. **事件类设计规范**：
+   ```java
+   // 【强制】事件类命名：业务对象 + 业务动作 + Event
+   @Data
+   @AllArgsConstructor
+   public class OrderPaymentSuccessEvent {
+       
+       // 【强制】必须包含业务标识
+       private final Long orderId;
+       private final Long userId;
+       
+       // 【强制】必须包含时间戳
+       private final LocalDateTime occurredAt;
+       
+       // 【强制】必须包含业务数据
+       private final Money paymentAmount;
+       private final String paymentMethod;
+       
+       // 【强制】可选的上下文信息
+       private final Map<String, Object> eventContext;
+   }
+   ```
+
+2. **事件发布规范**：
+   ```java
+   @Service
+   @RequiredArgsConstructor
+   public class PaymentServiceImpl implements PaymentService {
+       
+       private final ApplicationEventPublisher eventPublisher;
+       
+       @Transactional(rollbackFor = Exception.class)
+       public void processPayment(PaymentCommand command) {
+           // 业务处理...
+           
+           // 【强制】事件发布必须在事务提交前
+           OrderPaymentSuccessEvent event = new OrderPaymentSuccessEvent(
+               command.getOrderId(),
+               command.getUserId(),
+               LocalDateTime.now(),
+               command.getAmount(),
+               command.getPaymentMethod(),
+               buildEventContext(command)
+           );
+           
+           eventPublisher.publishEvent(event);
+           
+           log.info("支付成功事件已发布，订单号：{}", command.getOrderId());
+       }
+       
+       private Map<String, Object> buildEventContext(PaymentCommand command) {
+           Map<String, Object> context = new HashMap<>();
+           context.put("source", "PaymentService");
+           context.put("version", "1.0");
+           return context;
+       }
+   }
+   ```
+
+3. **事件监听规范**：
+   ```java
+   @Component
+   @Slf4j
+   public class OrderStatusEventListener {
+       
+       @EventListener
+       @Async("eventTaskExecutor")  // 【强制】异步处理，指定线程池
+       @Transactional(propagation = Propagation.REQUIRES_NEW)  // 【强制】新事务
+       public void handlePaymentSuccess(OrderPaymentSuccessEvent event) {
+           try {
+               // 【强制】记录事件处理开始
+               log.info("处理支付成功事件，订单号：{}", event.getOrderId());
+               
+               // 具体业务处理
+               updateOrderStatus(event.getOrderId(), OrderStatus.PAID);
+               sendPaymentNotification(event.getUserId(), event.getOrderId());
+               
+               // 【强制】记录事件处理完成
+               log.info("支付成功事件处理完成，订单号：{}", event.getOrderId());
+               
+           } catch (Exception e) {
+               // 【强制】异常处理和日志记录
+               log.error("处理支付成功事件失败，订单号：{}", event.getOrderId(), e);
+               // 【强制】不能抛出异常，避免影响其他监听器
+           }
+       }
+       
+       private void updateOrderStatus(Long orderId, OrderStatus status) {
+           // 具体实现
+       }
+       
+       private void sendPaymentNotification(Long userId, Long orderId) {
+           // 具体实现
+       }
+   }
+   ```
+
+## 三、模板方法模式精细化规范
+
+### 【强制】模板方法模式适用场景
+```
+提示词：@codebase 检查以下场景是否适合使用模板方法模式：
+1. 多个类有相同的处理流程但某些步骤实现不同
+2. 需要控制子类的扩展点
+3. 有明确的算法骨架且步骤顺序固定
+4. 希望避免代码重复
+
+如果满足3个以上条件，必须使用模板方法模式
+```
+
+### 【强制】模板方法实现规范
+1. **抽象模板类规范**：
+   ```java
+   // 【强制】抽象类命名：Abstract + 业务名称 + Template
+   public abstract class AbstractDataProcessorTemplate {
+       
+       // 【强制】模板方法必须为final，不允许子类重写
+       public final ProcessResult processData(DataInput input) {
+           // 【强制】固定的处理流程
+           validateInput(input);                    // 1. 输入校验
+           RawData rawData = extractData(input);    // 2. 数据提取（抽象）
+           CleanData cleanData = cleanData(rawData); // 3. 数据清洗（抽象）
+           ProcessedData processedData = transformData(cleanData); // 4. 数据转换（抽象）
+           ProcessResult result = saveData(processedData); // 5. 数据保存（抽象）
+           afterProcess(result);                    // 6. 后置处理（钩子方法）
+           return result;
+       }
+       
+       // 【强制】通用步骤在父类实现
+       private void validateInput(DataInput input) {
+           if (input == null || input.getData() == null) {
+               throw new ProjectBizException(ErrorCode.INVALID_INPUT, "输入数据不能为空");
+           }
+       }
+       
+       // 【强制】抽象方法：子类必须实现的步骤
+       protected abstract RawData extractData(DataInput input);
+       protected abstract CleanData cleanData(RawData rawData);
+       protected abstract ProcessedData transformData(CleanData cleanData);
+       protected abstract ProcessResult saveData(ProcessedData processedData);
+       
+       // 【强制】钩子方法：子类可选择实现
+       protected void afterProcess(ProcessResult result) {
+           log.info("数据处理完成，处理结果：{}", result.getStatus());
+       }
+   }
+   ```
+
+2. **具体实现类规范**：
+   ```java
+   @Component
+   public class CsvDataProcessor extends AbstractDataProcessorTemplate {
+       
+       @Override
+       protected RawData extractData(DataInput input) {
+           // 【强制】必须包含具体实现逻辑
+           if (!(input instanceof CsvDataInput)) {
+               throw new ProjectBizException(ErrorCode.UNSUPPORTED_INPUT_TYPE, 
+                   "CSV处理器只支持CSV输入");
+           }
+           
+           CsvDataInput csvInput = (CsvDataInput) input;
+           return csvParser.parse(csvInput.getFilePath());
+       }
+       
+       @Override
+       protected CleanData cleanData(RawData rawData) {
+           // CSV特定的数据清洗逻辑
+           return csvDataCleaner.clean(rawData);
+       }
+       
+       // 其他抽象方法实现...
+   }
+   ```
+
+## 四、责任链模式精细化规范
+
+### 【强制】责任链模式适用场景
+```
+提示词：@codebase 检查以下场景是否适合使用责任链模式：
+1. 有多个对象可以处理同一请求
+2. 处理者的顺序需要动态配置
+3. 请求的处理过程需要记录或监控
+4. 希望发送者与接收者解耦
+
+如果满足3个以上条件，必须使用责任链模式
+```
+
+### 【强制】责任链实现规范
+1. **抽象处理者规范**：
+   ```java
+   // 【强制】处理者基类命名：Abstract + 业务名称 + Handler
+   public abstract class AbstractValidationHandler {
+       
+       protected AbstractValidationHandler nextHandler;
+       
+       // 【强制】设置下一个处理者
+       public void setNextHandler(AbstractValidationHandler nextHandler) {
+           this.nextHandler = nextHandler;
+       }
+       
+       // 【强制】处理请求的模板方法
+       public final ValidationResult handle(ValidationRequest request) {
+           ValidationResult result = doHandle(request);
+           
+           // 【强制】如果当前处理者无法处理，传递给下一个
+           if (!result.isHandled() && nextHandler != null) {
+               return nextHandler.handle(request);
+           }
+           
+           return result;
+       }
+       
+       // 【强制】子类实现具体处理逻辑
+       protected abstract ValidationResult doHandle(ValidationRequest request);
+   }
+   ```
+
+2. **具体处理者规范**：
+   ```java
+   @Component
+   public class ParameterValidationHandler extends AbstractValidationHandler {
+       
+       @Override
+       protected ValidationResult doHandle(ValidationRequest request) {
+           // 【强制】检查是否能处理此请求
+           if (!canHandle(request)) {
+               return ValidationResult.notHandled();
+           }
+           
+           try {
+               // 【强制】具体处理逻辑
+               validateParameters(request);
+               return ValidationResult.success("参数校验通过");
+               
+           } catch (ValidationException e) {
+               return ValidationResult.failure("参数校验失败: " + e.getMessage());
+           }
+       }
+       
+       private boolean canHandle(ValidationRequest request) {
+           return request.getValidationType() == ValidationType.PARAMETER;
+       }
+       
+       private void validateParameters(ValidationRequest request) {
+           // 具体参数校验逻辑
+       }
+   }
+   ```
+
+3. **责任链管理器规范**：
+   ```java
+   @Service
+   @RequiredArgsConstructor
+   public class ValidationChainManager {
+       
+       private final List<AbstractValidationHandler> handlers;
+       
+       @PostConstruct
+       public void initChain() {
+           // 【强制】按顺序构建责任链
+           for (int i = 0; i < handlers.size() - 1; i++) {
+               handlers.get(i).setNextHandler(handlers.get(i + 1));
+           }
+       }
+       
+       public ValidationResult validate(ValidationRequest request) {
+           if (handlers.isEmpty()) {
+               throw new ProjectBizException(ErrorCode.NO_HANDLER_AVAILABLE, "没有可用的处理器");
+           }
+           
+           return handlers.get(0).handle(request);
+       }
+   }
+   ```
+
+## 五、命令模式精细化规范
+
+### 【强制】命令模式适用场景
+```
+提示词：@codebase 检查以下场景是否需要使用命令模式：
+1. 需要将请求排队、记录或撤销
+2. 需要支持事务操作
+3. 需要将调用者与接收者解耦
+4. 需要支持宏命令（组合命令）
+
+如果满足2个以上条件，推荐使用命令模式
+```
+
+### 【强制】命令模式实现规范
+1. **命令接口规范**：
+   ```java
+   // 【强制】命令接口命名：Command
+   public interface Command {
+       
+       // 【强制】执行命令
+       CommandResult execute();
+       
+       // 【强制】撤销命令（如果支持）
+       CommandResult undo();
+       
+       // 【强制】获取命令描述
+       String getDescription();
+       
+       // 【强制】检查是否可撤销
+       boolean isUndoable();
+   }
+   ```
+
+2. **具体命令实现**：
+   ```java
+   @Component
+   @RequiredArgsConstructor
+   public class CreateOrderCommand implements Command {
+       
+       private final OrderService orderService;
+       private final CreateOrderRequest request;
+       private Long createdOrderId;  // 用于撤销操作
+       
+       @Override
+       public CommandResult execute() {
+           try {
+               Order order = orderService.createOrder(request);
+               this.createdOrderId = order.getId();
+               
+               return CommandResult.success("订单创建成功", order.getId());
+               
+           } catch (Exception e) {
+               log.error("创建订单命令执行失败", e);
+               return CommandResult.failure("订单创建失败: " + e.getMessage());
+           }
+       }
+       
+       @Override
+       public CommandResult undo() {
+           if (createdOrderId == null) {
+               return CommandResult.failure("没有可撤销的订单");
+           }
+           
+           try {
+               orderService.cancelOrder(createdOrderId);
+               return CommandResult.success("订单撤销成功");
+               
+           } catch (Exception e) {
+               log.error("撤销订单命令失败", e);
+               return CommandResult.failure("订单撤销失败: " + e.getMessage());
+           }
+       }
+       
+       @Override
+       public String getDescription() {
+           return "创建订单命令 - 用户ID: " + request.getUserId();
+       }
+       
+       @Override
+       public boolean isUndoable() {
+           return createdOrderId != null;
+       }
+   }
+   ```
+
+3. **命令调用者规范**：
+   ```java
+   @Service
+   public class CommandInvoker {
+       
+       private final Stack<Command> commandHistory = new Stack<>();
+       
+       public CommandResult executeCommand(Command command) {
+           CommandResult result = command.execute();
+           
+           // 【强制】只有成功的可撤销命令才加入历史
+           if (result.isSuccess() && command.isUndoable()) {
+               commandHistory.push(command);
+           }
+           
+           return result;
+       }
+       
+       public CommandResult undoLastCommand() {
+           if (commandHistory.isEmpty()) {
+               return CommandResult.failure("没有可撤销的命令");
+           }
+           
+           Command lastCommand = commandHistory.pop();
+           return lastCommand.undo();
+       }
+       
+       public void clearHistory() {
+           commandHistory.clear();
+       }
+   }
+   ```

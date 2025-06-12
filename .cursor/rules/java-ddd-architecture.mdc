@@ -1,0 +1,108 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Java项目DDD架构规范
+
+## 六、领域驱动设计（DDD）与充血模型实践 (项目适配规范)
+
+**【非强制】本章节为项目适配规范，需要根据当前项目情况进行调整**
+
+### 📋 **适用场景**：
+- **类DDD项目**：当项目采用类DDD架构时，需要遵循本章节规范
+- **新功能开发**：如果项目是类DDD架构，新功能必须按照DDD规范进行设计和实现
+- **传统项目**：对于传统MVC架构项目，本章节仅作为参考，不强制执行
+
+### 🎯 **规范原则**：
+1. **项目适配优先**：以符合当前项目架构为准，而不是完整的DDD强制要求
+2. **渐进式实施**：可以从核心业务模块开始逐步引入DDD思想
+3. **实用性导向**：避免过度设计，以解决实际问题为目标
+
+### 6.1 核心理念：业务逻辑向领域模型内聚
+1.  **充血的领域实体 (Rich Domain Entity)**：
+    *   领域实体不仅仅是数据的容器，更要封装属于自身的业务行为和规则。例如，一个 `Order` 实体应该有 `cancel()`、`confirmPayment()`、`addItem()` 等方法，这些方法直接修改订单自身的状态或数据。
+    *   **优先将业务逻辑放在最能体现其本质的领域实体中**。
+2.  **应用服务 (Application Service) 的职责**：
+    *   应用服务（通常是 `XxxServiceImpl` 或 `XxxAppServiceImpl`）是领域模型的直接客户。
+    *   **主要职责**：
+        *   **用例协调**：接收外部请求（如Controller的调用），加载相关的领域实体（通过Repository），调用实体的方法来执行业务逻辑。
+        *   **事务管理**：控制业务用例的事务边界。
+        *   **权限校验**：执行必要的安全检查。
+        *   **与外部系统交互**：如发送通知、调用其他微服务（通过防腐层）。
+        *   **DTO转换**：负责领域对象与DTO之间的转换，向外部屏蔽领域模型的复杂性。
+    *   **避免**：应用服务不应包含核心的、属于某个特定实体的业务规则判断或状态变更逻辑。这些应在实体内部。
+3.  **领域服务 (Domain Service)**：
+    *   当某项业务逻辑不适合放在任何一个单一的实体或值对象中时（例如，它需要协调多个实体，或者它代表了一个重要的领域过程），可以使用领域服务。
+    *   领域服务的方法通常接收领域对象作为参数。
+    *   例如，一个复杂的订单价格计算规则，如果涉及多种促销策略和用户等级，可以由 `OrderPricingDomainService` 来实现。
+4.  **仓库 (Repository)**：
+    *   负责领域对象的持久化和检索，提供一个类似集合的接口来操作聚合根（Aggregate Root）。
+    *   将领域模型与具体的持久化技术（如MyBatis, JPA）解耦。
+    *   Repository 的接口定义在领域层，其实现通常放在基础设施层（或DAO层）。
+    *   负责领域实体 (`XxxEntity`) 与数据持久化对象 (`XxxDO`) 之间的映射转换。
+
+### 6.2 变种DDD的特点与协调
+1.  **现有规范的继承与演进**：
+    *   本DDD实践是在现有 [java-code-development-and-quality.mdc](mdc:.cursor/rules/java-code-development-and-quality.mdc) 、 [java-project-architecture-and-structure.mdc](mdc:.cursor/rules/java-project-architecture-and-structure.mdc)  等规范基础上的增强，不是完全颠覆。
+    *   **命名规范**：在现有命名规则基础上，引入DDD特有的构件命名（如 `XxxEntity`, `XxxRepository`, `XxxDomainService`），并明确其在DDD分层架构中的角色。原有的 `XxxDO` 继续作为数据持久化对象，`XxxService` 可演进为应用服务 `XxxAppService`。
+    *   **分层架构**：DDD的分层架构（表示层、应用层、领域层、基础设施层）可以与现有的模块划分（web, biz, dao等）进行映射和对应。
+        *   `web` 模块通常对应表示层。
+        *   `biz` 模块可以包含应用层和部分领域层逻辑（特别是应用服务和领域服务接口）。
+        *   领域实体和值对象可以放在 `biz` 模块下的特定领域包中，或者一个独立的 `domain` 模块（如果项目复杂）。
+        *   `dao` 模块或一个独立的 `infrastructure` 模块可以包含Repository的实现和DO的定义。
+2.  **DO 与 Entity 的关系**：
+    *   `XxxDO` (Data Object)：贫血对象，与数据库表结构一一对应，由MyBatis-Plus管理，主要用于数据持久化。
+    *   `XxxEntity` (Domain Entity)：充血对象，包含业务逻辑和状态，是领域模型的核心。
+    *   `XxxRepository` 负责 `XxxEntity` 和 `XxxDO` 之间的转换。应用服务通过Repository获取 `XxxEntity`，操作实体后，再通过Repository持久化（通常会转换为DO）。
+3.  **事务管理**：
+    *   事务依然推荐使用 `@Transactional` 注解，通常标记在应用服务的方法上，确保一个完整的业务用例在一个事务中执行。
+4.  **代码组织**：
+    *   在 `biz` 模块（或独立的 `domain` 模块）中，按限界上下文（Bounded Context）或核心领域概念组织包结构。例如：
+        ```
+        com.hexonal.ht.biz.oms // 订单管理上下文
+          ├── domain
+          │   ├── model      // 实体、值对象
+          │   │   ├── order
+          │   │   │   ├── Order.java  (Entity - Aggregate Root)
+          │   │   │   ├── OrderItem.java (Entity)
+          │   │   │   ├── ShippingAddress.java (Value Object)
+          │   │   │   └── OrderStatus.java (Enum)
+          │   │   └── product
+          │   │       └── ProductSnapshot.java (Value Object or Entity representing product info at time of order)
+          │   ├── service    // 领域服务接口与实现
+          │   │   └── OrderPricingDomainService.java
+          │   └── repository // Repository接口
+          │       └── OrderRepository.java
+          ├── application    // 应用服务
+          │   ├── OrderAppService.java
+          │   ├── impl
+          │   │   └── OrderAppServiceImpl.java
+          │   └── dto
+          │       ├── CreateOrderReq.java
+          │       └── OrderDetailsResp.java
+          └── // ... 其他如定时任务、消息处理等
+        ```
+5.  **逐步演进**：
+    *   对于现有项目，不必追求一次性完全DDD改造。可以从核心领域、业务复杂性高的模块开始试点，逐步引入充血模型和DDD思想。
+    *   新项目或新模块则推荐从一开始就采用这种变种DDD架构。
+
+### 6.3 实践DDD的收益与考量
+1.  **收益**：
+    *   **更清晰的业务表达**：代码结构更贴近业务语言，降低沟通成本。
+    *   **更高的内聚性**：业务逻辑和其操作的数据被封装在一起，易于理解和修改。
+    *   **更低的耦合度**：通过明确的接口和分层，降低模块间的依赖。
+    *   **更好的可测试性**：领域实体和领域服务通常不依赖外部框架，易于进行单元测试。
+    *   **更强的可扩展性**：清晰的边界和内聚的模块使得系统更容易适应变化。
+2.  **考量**：
+    *   **学习曲线**：团队需要理解DDD的核心概念和思想。
+    *   **设计复杂度**：初期可能需要更多的时间进行领域建模和设计。
+    *   **过度设计风险**：对于简单的CRUD操作，不必强行套用所有DDD模式，应务实选择。的变种DDD允许在简单场景下仍可使用贫血模型和事务脚本模式。
+    *   **性能**：充血模型中实体方法调用可能涉及数据库操作，需关注性能，尤其是在Repository的实现和实体间关联加载策略上。
+
+### 6.4 与AI协作实践DDD
+*   **模型构建辅助**：可以向AI描述业务场景，要求其初步识别潜在的实体、值对象、聚合等，并讨论其合理性。
+*   **行为分配**：在设计实体方法时，可以与AI讨论某个业务逻辑应该属于哪个实体，或者是否需要一个领域服务。
+*   **代码生成**：在明确了实体及其行为后，可以要求AI生成符合充血模型特点的实体类骨架（包含字段和业务方法签名），并遵循本规范中的命名和注释约定。
+*   **Repository模式实现**：可以要求AI生成Repository接口及其基于MyBatis-Plus的实现骨架，包括Entity与DO的转换逻辑。
+*   **规范检查**：提供代码片段，询问AI是否符合充血模型原则或本规范中关于DDD的特定要求。

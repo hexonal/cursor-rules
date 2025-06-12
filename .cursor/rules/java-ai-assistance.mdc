@@ -1,0 +1,38 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+---
+description: Java项目AI辅助开发规范 (从java-code-development-and-quality.mdc中提取)
+globs: 
+alwaysApply: true
+---
+
+# Java项目AI辅助开发规范
+
+## 五、AI辅助编码与规范融合实践
+
+### 5.1 激活AI高级能力辅助编码与合规
+- **代码库模式检索与应用 (如引导AI调用 `codebase_search`, `grep_search`)**: 当需要实现特定功能或模式，但不确定如何在当前项目中最佳实践时，可引导AI利用代码搜索能力，在项目中查找符合 [java-code-development-and-quality.mdc](mdc:.cursor/rules/java-code-development-and-quality.mdc) 规范的现有实现作为参考。例如，查找特定异常处理、日志格式、事务管理或设计模式的合规应用实例。
+- **复杂编码任务的结构化拆解 (如引导AI调用 `mcp_sequential-thinking_sequentialthinking`)**: 对于复杂的函数实现、模块重构或算法设计，可以引导AI运用结构化思考能力，将任务分解为更小、更易管理步骤。确保每一步的设计和实现都考虑到本规范的各项要求（如方法原子性、参数校验、异常处理、日志记录等），从而系统性地构建出高质量且合规的代码。
+- **库使用与最佳实践探索 (如引导AI调用 `mcp_context7_resolve-library-id`, `mcp_context7_get-library_docs`)**: 在引入新库或使用现有库的复杂功能时，可引导AI调用文档获取能力，深入理解库的API、最佳实践和潜在陷阱。这有助于编写出更健壮、高效且符合预期的代码，避免不当使用导致的质量问题。
+
+### 5.2 AI作为编码规范的实时顾问
+- **即时规范查询与解读**：在编码过程中，遇到对本规范 ( @java-code-development-and-quality.mdc ) 具体条款（如命名约定、方法设计原则、异常处理方式、注释标准等）的疑问时，可以直接向AI提问。例如："请解释一下本规范中关于Service层方法原子性的要求"，或"根据本规范，DTO的字段注释应该包含哪些内容？"
+- **代码片段合规性检查**：可以粘贴少量代码片段，并要求AI基于本规范的具体章节或条款进行快速检查。例如："帮我看看这段代码的日志打印是否符合 `@java-code-development-and-quality.mdc` 的日志规范？"，或者在重构时："这段旧代码在事务处理方面有哪些不符合本规范的地方，应该如何修改？"
+- **最佳实践建议**：针对特定场景，可以询问AI在本规范框架下的推荐做法。例如："我需要在BizServiceImpl中处理一个可能调用多个DAO操作的业务逻辑，并确保整体事务性，根据规范，推荐使用声明式事务还是编程式事务？如果是编程式，规范中推荐哪种方式？"
+
+### 5.3 引导AI产出合规的高质量代码
+- **明确的、基于规范的指令**：在要求AI生成代码时（如创建新的Controller、Service、DAO、DTO或工具类），指令中应明确包含需遵循的规范要点。例如："请帮我创建一个名为`ProductServiceImpl`的类。它应位于`biz`模块。在确定其具体包路径时，请**严格遵循** [java-project-architecture-and-structure.mdc](mdc:.cursor/rules/java-project-architecture-and-structure.mdc) 中定义的项目包结构规范，该规范通常要求在项目基础包名（如 `com.hexonal.{项目标识}`）下，根据模块类型（如 `biz`）和具体业务模块（如 `{模块}`）来组织，形成类似 `com.hexonal.{项目标识}.biz.{模块}.service.impl` 的结构。请确保将占位符 `{项目标识}` 和 `{模块}` 替换为当前项目的实际名称。同时，确保使用构造器注入，类和方法注释完整，所有类名、方法名、变量名均严格遵守 [java-code-development-and-quality.mdc](mdc:.cursor/rules/java-code-development-and-quality.mdc) 中的命名规范，并遵循本规范中关于Service层方法设计（参数校验、业务处理、结果处理分层）的要求。"
+- **结构化代码生成**：对于需要遵循特定结构的代码（如`XxxServiceImpl`的模板、符合 [java-code-development-and-quality.mdc](mdc:.cursor/rules/java-code-development-and-quality.mdc) 命名规范的`XxxReq`/`XxxResp`的字段定义、单元测试类的骨架），可以要求AI直接生成符合规范的框架代码，然后开发者再填充具体的业务逻辑。
+- **合规性重构辅助**：当发现现有代码不符合规范时，可以向AI描述问题并引用相关规范条款（例如 [java-code-development-and-quality.mdc](mdc:.cursor/rules/java-code-development-and-quality.mdc) 中关于命名或异常处理的规定），要求其提供重构建议或直接生成重构后的代码。例如："这段代码的异常处理不符合 [java-code-development-and-quality.mdc](mdc:.cursor/rules/java-code-development-and-quality.mdc) 中关于异常转换和日志记录的要求，请帮我重构它，确保所有类和方法名都符合驼峰命名法。"
+### 5.4 AI辅助的代码质量保障与提升
+- **初步代码审查助手**：在提交代码进行人工Code Review之前，可以先让AI基于本规范进行一轮预审查。AI可以帮助识别一些较为明显的规范偏离点，如命名不规范、注释缺失、未使用推荐的注解、魔法值使用、过于复杂的表达式等。
+- **单元测试用例生成与优化**：可以要求AI为特定的方法或类生成符合本规范（如测试方法命名、断言使用、边界条件考虑）的单元测试用例。也可以让AI分析现有测试用例，看是否覆盖了所有重要分支和异常路径，并提出优化建议。
+- **识别潜在的代码坏味道**：虽然AI可能无法完全替代资深开发者的判断，但可以引导其识别一些常见的代码坏味道，如方法过长、参数过多、重复代码等，并结合规范给出初步的优化方向。
+
+### 5.5 与AI协作的持续学习与反馈闭环
+- **将AI反馈视为学习机会**：当AI基于规范指出代码问题或提出改进建议时，开发者应将其视为一次加深规范理解和提升编码技能的机会。
+- **用规范校准AI**：如果AI生成的代码不完全符合本规范，开发者应进行修正，并可以将修正前后的对比和规范要点反馈给AI（如果AI支持此类学习交互），或者至少在后续提问中更精确地引导AI。这种互动有助于AI更好地适应项目的编码标准。
+- **共同演进规范与实践**：在与AI协作编码的过程中，如果发现某些规范条款在AI辅助下难以高效执行，或者AI的某些建议超出了当前规范但确实更优，可以作为讨论和修订规范的输入，促进规范与AI辅助开发实践的共同进步。
