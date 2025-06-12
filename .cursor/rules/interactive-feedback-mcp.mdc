@@ -1,0 +1,51 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# MCP Interactive Feedback 强制持续交互规则
+
+## 【强制】核心交互原则
+1. **强制持续性**：在任何过程、任务或对话中，无论是询问、响应还是完成阶段任务，**必须**调用 `mcp_mcp-feedback-enhanced_interactive_feedback`
+2. **无条件调用**：不得因为反馈内容为空或任何其他条件而跳过调用 `mcp_mcp-feedback-enhanced_interactive_feedback`
+3. **明确结束条件**：只有当用户明确表示"结束"、"完成"或"无需更多交互"时才能停止调用
+
+## 【强制】执行规则
+1. **任务开始时**：必须调用 `mcp_mcp-feedback-enhanced_interactive_feedback` 获取初始反馈
+2. **任务进行中**：每完成一个步骤或子任务，必须调用 `mcp_mcp-feedback-enhanced_interactive_feedback`
+3. **任务完成后**：**绝不**自动结束，必须调用 `mcp_mcp-feedback-enhanced_interactive_feedback` 等待用户反馈
+4. **其他工具调用后**：无论Sequential Thinking或Context7执行完毕，都必须**强制**调用 `mcp_mcp-feedback-enhanced_interactive_feedback`
+
+## 【强制】辅助工具调用规则
+### Sequential Thinking 分析工具
+- **函数名**：`mcp_sequential-thinking_sequentialthinking`
+- **使用场景**：复杂问题分析时使用
+- **调用后必须**：立即调用 `mcp_mcp-feedback-enhanced_interactive_feedback`
+
+### Context7 文档查询工具
+- **函数名**：`mcp_context7_resolve-library-id` 和 `mcp_context7_get-library-docs`
+- **使用场景**：需要查询技术文档时使用
+- **调用后必须**：立即调用 `mcp_mcp-feedback-enhanced_interactive_feedback`
+
+## 【增强】智能反馈处理机制
+1. **非空反馈**：智能分析反馈内容，优化后续策略，继续调用 `mcp_mcp-feedback-enhanced_interactive_feedback`
+2. **空反馈**：理解为用户需要更多时间思考，保持耐心等待，继续调用 `mcp_mcp-feedback-enhanced_interactive_feedback`
+3. **持续优化**：根据用户行为模式，智能调整交互频率和方式
+
+## 【强制】结束条件
+**唯一合法的结束条件**：
+- 用户明确输入包含"结束"、"完成"、"end"、"finish"、"无需更多交互"等明确结束意图的词汇
+- 用户明确表示不需要继续交互
+
+## 【限制】智能约束规则
+1. **限制**：反馈为空时不应视为结束信号
+2. **限制**：任务完成后需要用户确认才可结束
+3. **限制**：工具调用完成后需要获取用户反馈
+4. **限制**：避免未经用户确认的自动结束循环
+5. **增强**：优先调用 `mcp_mcp-feedback-enhanced_interactive_feedback` 保持交互
+
+## 【增强】智能验证机制
+发现未调用 `mcp_mcp-feedback-enhanced_interactive_feedback` 而直接结束对话时，应启动智能修正流程，分析原因并优化交互策略。
+
+## 【规则优先级】
+此规则具有**最高优先级**，覆盖所有其他可能导致自动结束的规则或条件。任何与此规则冲突的其他规则条款均应被忽略。

@@ -1,0 +1,449 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 小程序设计模式应用规则
+
+## 🔄 观察者模式 (Observer Pattern)
+
+### 事件驱动架构
+基于项目中大量使用的wx.$TUIKit事件系统实现观察者模式：
+
+```javascript
+// 事件管理器设计
+class EventManager {
+  constructor() {
+    this.events = new Map();
+  }
+
+  // 订阅事件
+  on(eventName, handler, context) {
+    if (!this.events.has(eventName)) {
+      this.events.set(eventName, []);
+    }
+    this.events.get(eventName).push({ handler, context });
+  }
+
+  // 发布事件
+  emit(eventName, data) {
+    const handlers = this.events.get(eventName);
+    if (handlers) {
+      handlers.forEach(({ handler, context }) => {
+        handler.call(context, data);
+      });
+    }
+  }
+
+  // 取消订阅
+  off(eventName, handler) {
+    const handlers = this.events.get(eventName);
+    if (handlers) {
+      const index = handlers.findIndex(h => h.handler === handler);
+      if (index !== -1) {
+        handlers.splice(index, 1);
+      }
+    }
+  }
+}
+
+// 在组件中的应用
+Component({
+  lifetimes: {
+    attached() {
+      // 订阅消息相关事件
+      wx.$TUIKit.on(wx.TencentCloudChat.EVENT.MESSAGE_RECEIVED, this.$onMessageReceived, this);
+      wx.$TUIKit.on(wx.TencentCloudChat.EVENT.MESSAGE_READ_BY_PEER, this.$onMessageReadByPeer, this);
+    },
+
+    detached() {
+      // 清理事件监听
+      wx.$TUIKit.off(wx.TencentCloudChat.EVENT.MESSAGE_RECEIVED, this.$onMessageReceived);
+      wx.$TUIKit.off(wx.TencentCloudChat.EVENT.MESSAGE_READ_BY_PEER, this.$onMessageReadByPeer);
+    },
+  },
+
+  methods: {
+    $onMessageReceived(event) {
+      // 处理新消息
+      this.updateMessageList(event.data);
+    },
+
+    $onMessageReadByPeer(event) {
+      // 处理消息已读状态
+      this.updateReadStatus(event.data);
+    },
+  },
+});
+```
+
+## 🏭 工厂模式 (Factory Pattern)
+
+### 消息类型工厂
+参考 [components/TUIChat/components/MessageElements](mdc:components/TUIChat/components/MessageElements) 的设计：
+
+```javascript
+// 消息组件工厂
+class MessageFactory {
+  static messageTypes = {
+    text: 'TextMessage',
+    image: 'ImageMessage', 
+    audio: 'AudioMessage',
+    video: 'VideoMessage',
+    file: 'FileMessage',
+    custom: 'CustomMessage',
+    system: 'SystemMessage',
+  };
+
+  // 创建消息组件
+  static createMessage(messageType, messageData) {
+    const ComponentName = this.messageTypes[messageType];
+    
+    if (!ComponentName) {
+      console.warn(`Unknown message type: ${messageType}`);
+      return this.createMessage('text', { content: '不支持的消息类型' });
+    }
+
+    return {
+      componentName: ComponentName,
+      properties: {
+        message: messageData,
+        isMine: messageData.flow === 'out',
+      },
+    };
+  }
+
+  // 注册新的消息类型
+  static registerMessageType(type, componentName) {
+    this.messageTypes[type] = componentName;
+  }
+}
+
+// 在组件中使用
+Component({
+  methods: {
+    renderMessage(message) {
+      const messageComponent = MessageFactory.createMessage(
+        message.type, 
+        message
+      );
+      
+      this.setData({
+        currentMessageComponent: messageComponent,
+      });
+    },
+  },
+});
+```
+
+### 服务工厂
+```javascript
+// API服务工厂
+class ServiceFactory {
+  static services = new Map();
+
+  static createService(serviceName, config) {
+    if (this.services.has(serviceName)) {
+      return this.services.get(serviceName);
+    }
+
+    let service;
+    switch (serviceName) {
+      case 'chat':
+        service = new ChatService(config);
+        break;
+      case 'upload':
+        service = new UploadService(config);
+        break;
+      case 'auth':
+        service = new AuthService(config);
+        break;
+      default:
+        throw new Error(`Unknown service: ${serviceName}`);
+    }
+
+    this.services.set(serviceName, service);
+    return service;
+  }
+
+  static getService(serviceName) {
+    return this.services.get(serviceName);
+  }
+}
+```
+
+## 🎯 策略模式 (Strategy Pattern)
+
+### 消息发送策略
+```javascript
+// 消息发送策略接口
+class MessageSendStrategy {
+  async send(message, options) {
+    throw new Error('send method must be implemented');
+  }
+}
+
+// 文本消息发送策略
+class TextMessageStrategy extends MessageSendStrategy {
+  async send(message, options) {
+    return wx.$TUIKit.sendMessage({
+      to: options.to,
+      conversationType: options.conversationType,
+      payload: {
+        text: message.content,
+      },
+    });
+  }
+}
+
+// 图片消息发送策略
+class ImageMessageStrategy extends MessageSendStrategy {
+  async send(message, options) {
+    // 先压缩图片
+    const compressedImage = await this.compressImage(message.file);
+    
+    return wx.$TUIKit.sendMessage({
+      to: options.to,
+      conversationType: options.conversationType,
+      payload: {
+        file: compressedImage,
+      },
+    });
+  }
+
+  async compressImage(file) {
+    return new Promise((resolve) => {
+      wx.compressImage({
+        src: file.path,
+        quality: 80,
+        success: resolve,
+      });
+    });
+  }
+}
+
+// 消息发送器
+class MessageSender {
+  constructor() {
+    this.strategies = {
+      text: new TextMessageStrategy(),
+      image: new ImageMessageStrategy(),
+      audio: new AudioMessageStrategy(),
+    };
+  }
+
+  async sendMessage(message, options) {
+    const strategy = this.strategies[message.type];
+    if (!strategy) {
+      throw new Error(`No strategy for message type: ${message.type}`);
+    }
+    
+    return strategy.send(message, options);
+  }
+}
+```
+
+### 权限验证策略
+```javascript
+// 权限验证策略
+class PermissionStrategy {
+  async checkPermission(permissionType) {
+    throw new Error('checkPermission must be implemented');
+  }
+}
+
+class RecordPermissionStrategy extends PermissionStrategy {
+  async checkPermission() {
+    return new Promise((resolve) => {
+      wx.getSetting({
+        success: (res) => {
+          const isRecord = res.authSetting['scope.record'];
+          if (isRecord === false) {
+            // 需要重新授权
+            wx.authorize({
+              scope: 'scope.record',
+              success: () => resolve(true),
+              fail: () => resolve(false),
+            });
+          } else {
+            resolve(isRecord !== false);
+          }
+        },
+      });
+    });
+  }
+}
+
+class CameraPermissionStrategy extends PermissionStrategy {
+  async checkPermission() {
+    return new Promise((resolve) => {
+      wx.getSetting({
+        success: (res) => {
+          const hasPermission = res.authSetting['scope.camera'];
+          resolve(hasPermission !== false);
+        },
+      });
+    });
+  }
+}
+```
+
+## 🔧 适配器模式 (Adapter Pattern)
+
+### SDK适配器
+```javascript
+// 第三方SDK适配器
+class TencentIMAdapter {
+  constructor(sdk) {
+    this.sdk = sdk;
+  }
+
+  // 统一的消息发送接口
+  async sendMessage(params) {
+    const { type, content, to, conversationType } = params;
+    
+    let message;
+    switch (type) {
+      case 'text':
+        message = this.sdk.createTextMessage({
+          to,
+          conversationType,
+          payload: { text: content },
+        });
+        break;
+      case 'image':
+        message = this.sdk.createImageMessage({
+          to,
+          conversationType,
+          payload: { file: content },
+        });
+        break;
+      default:
+        throw new Error(`Unsupported message type: ${type}`);
+    }
+
+    return this.sdk.sendMessage(message);
+  }
+
+  // 统一的事件监听接口
+  onMessage(callback) {
+    this.sdk.on(this.sdk.EVENT.MESSAGE_RECEIVED, callback);
+  }
+
+  offMessage(callback) {
+    this.sdk.off(this.sdk.EVENT.MESSAGE_RECEIVED, callback);
+  }
+}
+
+// 使用适配器
+const imAdapter = new TencentIMAdapter(wx.$TUIKit);
+
+// 统一的调用方式
+imAdapter.sendMessage({
+  type: 'text',
+  content: 'Hello',
+  to: 'user123',
+  conversationType: 'C2C',
+});
+```
+
+## 🔗 组合模式 (Composite Pattern)
+
+### 消息组件组合
+参考项目中MessageElements的组合设计：
+
+```javascript
+// 消息容器组件
+class MessageContainer {
+  constructor() {
+    this.children = [];
+  }
+
+  add(component) {
+    this.children.push(component);
+  }
+
+  remove(component) {
+    const index = this.children.indexOf(component);
+    if (index !== -1) {
+      this.children.splice(index, 1);
+    }
+  }
+
+  render() {
+    return this.children.map(child => child.render()).join('');
+  }
+}
+
+// 具体消息组件
+class TextMessageComponent {
+  constructor(data) {
+    this.data = data;
+  }
+
+  render() {
+    return `<text-message message="${this.data}"></text-message>`;
+  }
+}
+
+class ImageMessageComponent {
+  constructor(data) {
+    this.data = data;
+  }
+
+  render() {
+    return `<image-message message="${this.data}"></image-message>`;
+  }
+}
+
+// 组合使用
+const messageContainer = new MessageContainer();
+messageContainer.add(new TextMessageComponent(textData));
+messageContainer.add(new ImageMessageComponent(imageData));
+const messageListHTML = messageContainer.render();
+```
+
+## 🎭 代理模式 (Proxy Pattern)
+
+### 网络请求代理
+```javascript
+// 网络请求代理，添加缓存、重试、错误处理
+class NetworkProxy {
+  constructor() {
+    this.cache = new Map();
+    this.retryCount = 3;
+  }
+
+  async request(url, options = {}) {
+    const cacheKey = `${url}_${JSON.stringify(options)}`;
+    
+    // 检查缓存
+    if (this.cache.has(cacheKey)) {
+      return this.cache.get(cacheKey);
+    }
+
+    // 带重试的请求
+    let lastError;
+    for (let i = 0; i < this.retryCount; i++) {
+      try {
+        const response = await wx.request({ url, ...options });
+        this.cache.set(cacheKey, response);
+        return response;
+      } catch (error) {
+        lastError = error;
+        await this.delay(1000 * (i + 1)); // 递增延迟
+      }
+    }
+
+    throw lastError;
+  }
+
+  delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+}
+
+// 使用代理
+const networkProxy = new NetworkProxy();
+const result = await networkProxy.request('/api/messages');
+```

@@ -1,0 +1,125 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 小程序架构设计规则
+
+## 🏗️ 架构设计原则
+
+### 分层架构设计
+```
+项目根目录/
+├── components/          # 组件层 - 可复用UI组件
+│   ├── common/         # 通用组件
+│   └── business/       # 业务组件
+├── pages/              # 页面层 - 业务页面
+├── utils/              # 工具层 - 通用工具函数
+├── plugins/            # 插件层 - 第三方插件封装
+├── static/             # 静态资源层
+└── services/           # 服务层 - API接口封装
+```
+
+### 组件化设计规范
+- **单一职责原则**：每个组件只负责一个功能领域
+- **高内聚低耦合**：组件内部功能紧密相关，组件间依赖最小
+- **可复用性**：组件设计要考虑在不同场景下的复用
+- **标准化接口**：统一的properties、methods、events命名规范
+
+### 模块命名规范
+- **业务模块前缀**：使用项目特定前缀，如TUI、APP等
+- **功能模块分类**：按功能领域分组，如Chat、Contact、Conversation
+- **层级结构清晰**：目录结构反映功能层级关系
+
+## 📦 组件设计模式
+
+### Component标准结构
+```javascript
+Component({
+  /**
+   * 组件的属性列表
+   */
+  properties: {
+    // 使用observer监听属性变化
+    dataSource: {
+      type: Object,
+      value: {},
+      observer(newVal) {
+        this.handleDataChange(newVal);
+      },
+    },
+  },
+
+  /**
+   * 组件的初始数据
+   */
+  data: {
+    // 私有数据放在data中
+  },
+
+  /**
+   * 组件生命周期
+   */
+  lifetimes: {
+    attached() {
+      // 组件初始化逻辑
+      this.initComponent();
+    },
+    detached() {
+      // 清理逻辑，如事件解绑
+      this.cleanup();
+    },
+  },
+
+  /**
+   * 组件的方法列表
+   */
+  methods: {
+    // 公共方法以$开头
+    $publicMethod() {},
+    
+    // 私有方法使用普通命名
+    privateMethod() {},
+    
+    // 事件处理方法以handle开头
+    handleUserAction() {},
+  },
+});
+```
+
+### 状态管理模式
+- **本地状态**：使用this.setData()管理组件内部状态
+- **全局状态**：使用wx全局对象或app.globalData
+- **事件通信**：使用triggerEvent向父组件传递事件
+
+## 🔧 工具函数设计
+
+### 工具函数分类
+参考 [utils/constant.js](mdc:utils/constant.js) 的设计模式：
+- **常量管理**：统一的constant.js管理业务常量
+- **错误码管理**：集中管理错误码和提示文案
+- **通用工具**：日期处理、消息解析等纯函数
+
+### 常量定义规范
+```javascript
+const constant = {
+  // 功能模块分组
+  MESSAGE_TYPE: {
+    TEXT: 'text',
+    IMAGE: 'image',
+    AUDIO: 'audio',
+  },
+  
+  // 错误码集中管理
+  ERROR_CODE: {
+    NETWORK_ERROR: 1001,
+    AUTH_FAILED: 1002,
+  },
+  
+  // 业务常量
+  BUSINESS_CONFIG: {
+    MAX_MESSAGE_LENGTH: 500,
+    UPLOAD_SIZE_LIMIT: 10 * 1024 * 1024,
+  },
+};
+```

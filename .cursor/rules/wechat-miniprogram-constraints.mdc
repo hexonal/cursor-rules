@@ -1,0 +1,469 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 微信小程序平台约束专门规则
+
+## 📱 微信小程序独有限制处理
+
+### 包体积2MB限制专门优化
+```javascript
+// 专门的分包策略 - 基于聊天功能
+const ChatPackageStrategy = {
+  // 主包：核心聊天功能
+  mainPackage: {
+    maxSize: 1.5 * 1024 * 1024, // 1.5MB
+    components: [
+      'components/TUIConversation',
+      'components/TUIChat/components/MessageList',
+      'components/TUIChat/components/MessageInput',
+      'components/TUIChat/components/MessageElements/TextMessage',
+    ],
+  },
+
+  // 分包1：媒体消息组件
+  mediaPackage: {
+    root: 'packages/media',
+    components: [
+      'MessageElements/ImageMessage',
+      'MessageElements/AudioMessage', 
+      'MessageElements/VideoMessage',
+      'MessageElements/FileMessage',
+    ],
+  },
+
+  // 分包2：扩展功能
+  extensionPackage: {
+    root: 'packages/extension',
+    components: [
+      'MessageElements/CustomMessage',
+      'MessagePrivate/CommonWords',
+      'MessagePrivate/OrderList',
+      'TUICallKit',
+    ],
+  },
+
+  // 动态加载策略
+  async loadPackage(packageName) {
+    if (this.loadedPackages.has(packageName)) {
+      return this.loadedPackages.get(packageName);
+    }
+
+    try {
+      // 显示加载提示
+      wx.showLoading({ title: '加载中...' });
+      
+      const packageModule = await import(`../packages/${packageName}/index`);
+      this.loadedPackages.set(packageName, packageModule);
+      
+      wx.hideLoading();
+      return packageModule;
+    } catch (error) {
+      wx.hideLoading();
+      wx.showToast({ title: '功能加载失败', icon: 'none' });
+      throw error;
+    }
+  },
+};
+```
+
+### 内存限制专门管理
+```javascript
+// 针对微信小程序内存限制的专门管理
+const WeChatMemoryManager = {
+  // iOS: 不同机型内存限制不同
+  memoryLimits: {
+    iPhone6: 320 * 1024 * 1024,    // 320MB
+    iPhone7Plus: 512 * 1024 * 1024, // 512MB
+    iPhoneX: 1024 * 1024 * 1024,   // 1GB
+  },
+
+  currentMemoryUsage: 0,
+  maxChatHistory: 200, // 最多保留200条消息
+
+  // 检测设备内存限制
+  detectDeviceMemoryLimit() {
+    const systemInfo = wx.getSystemInfoSync();
+    const { model, platform } = systemInfo;
+    
+    if (platform === 'ios') {
+      // 根据设备型号估算内存限制
+      if (model.includes('iPhone 6')) {
+        return this.memoryLimits.iPhone6;
+      } else if (model.includes('iPhone 7 Plus')) {
+        return this.memoryLimits.iPhone7Plus;
+      } else {
+        return this.memoryLimits.iPhoneX;
+      }
+    } else {
+      // Android设备差异很大，使用保守估计
+      return 256 * 1024 * 1024; // 256MB
+    }
+  },
+
+  // 智能消息清理
+  smartMessageCleanup() {
+    const messageList = this.data.messageList;
+    
+    if (messageList.length > this.maxChatHistory) {
+      // 保留最新的消息，清理旧消息
+      const messagesToKeep = messageList.slice(-this.maxChatHistory);
+      const messagesToClean = messageList.slice(0, -this.maxChatHistory);
+      
+      // 清理媒体文件引用
+      this.cleanupMediaReferences(messagesToClean);
+      
+      this.setData({
+        messageList: messagesToKeep,
+      });
+    }
+  },
+
+  // 清理媒体文件引用，释放内存
+  cleanupMediaReferences(messages) {
+    messages.forEach(message => {
+      if (message.type === 'image' && message.localImagePath) {
+        // 不删除文件，只清理引用
+        delete message.localImagePath;
+      }
+      if (message.type === 'audio' && message.audioContext) {
+        // 销毁音频上下文
+        message.audioContext.destroy();
+        delete message.audioContext;
+      }
+    });
+  },
+
+  // 监控内存使用
+  monitorMemoryUsage() {
+    // 微信小程序没有直接的内存监控API，使用数据大小估算
+    const estimateMemoryUsage = () => {
+      const dataSize = JSON.stringify(this.data).length;
+      const imageCount = this.data.messageList.filter(msg => msg.type === 'image').length;
+      const audioCount = this.data.messageList.filter(msg => msg.type === 'audio').length;
+      
+      // 估算内存使用量
+      return dataSize + imageCount * 1024 * 1024 + audioCount * 512 * 1024;
+    };
+
+    setInterval(() => {
+      const usage = estimateMemoryUsage();
+      const limit = this.detectDeviceMemoryLimit();
+      
+      if (usage > limit * 0.8) { // 超过80%使用率
+        console.warn('Memory usage high, triggering cleanup');
+        this.smartMessageCleanup();
+      }
+    }, 30000); // 每30秒检查一次
+  },
+};
+```
+
+### 微信小程序Canvas限制处理
+```javascript
+// Canvas在聊天中的特殊应用（如绘画消息、图片编辑）
+const WeChatCanvasManager = {
+  maxCanvasSize: {
+    width: 750,  // 微信小程序Canvas最大宽度限制
+    height: 1334, // 最大高度限制
+  },
+
+  // 处理高分辨率图片
+  processHighResImage(imagePath) {
+    return new Promise((resolve, reject) => {
+      wx.getImageInfo({
+        src: imagePath,
+        success: (res) => {
+          const { width, height } = res;
+          
+          // 检查是否超过Canvas限制
+          if (width > this.maxCanvasSize.width || height > this.maxCanvasSize.height) {
+            // 需要压缩
+            this.compressImageForCanvas(imagePath, width, height)
+              .then(resolve)
+              .catch(reject);
+          } else {
+            resolve(imagePath);
+          }
+        },
+        fail: reject,
+      });
+    });
+  },
+
+  async compressImageForCanvas(imagePath, originalWidth, originalHeight) {
+    const canvas = wx.createCanvasContext('image-compress-canvas');
+    
+    // 计算压缩比例
+    const scaleX = this.maxCanvasSize.width / originalWidth;
+    const scaleY = this.maxCanvasSize.height / originalHeight;
+    const scale = Math.min(scaleX, scaleY, 1); // 不放大
+    
+    const newWidth = originalWidth * scale;
+    const newHeight = originalHeight * scale;
+    
+    // 绘制压缩后的图片
+    canvas.drawImage(imagePath, 0, 0, newWidth, newHeight);
+    
+    return new Promise((resolve) => {
+      canvas.draw(false, () => {
+        wx.canvasToTempFilePath({
+          canvasId: 'image-compress-canvas',
+          width: newWidth,
+          height: newHeight,
+          success: (res) => resolve(res.tempFilePath),
+        });
+      });
+    });
+  },
+};
+```
+
+## 🔒 微信小程序权限处理
+
+### 敏感API权限管理
+```javascript
+// 专门处理微信小程序的敏感权限
+const WeChatPermissionManager = {
+  // 权限状态缓存
+  permissionCache: new Map(),
+
+  // 统一权限检查流程
+  async checkAndRequestPermission(scopeName, options = {}) {
+    const cacheKey = scopeName;
+    
+    // 检查缓存
+    if (this.permissionCache.has(cacheKey)) {
+      const cachedResult = this.permissionCache.get(cacheKey);
+      if (Date.now() - cachedResult.timestamp < 60000) { // 1分钟缓存
+        return cachedResult.hasPermission;
+      }
+    }
+
+    try {
+      // 检查当前权限状态
+      const settingRes = await this.getSetting();
+      const currentPermission = settingRes.authSetting[scopeName];
+      
+      if (currentPermission === true) {
+        this.cachePermission(cacheKey, true);
+        return true;
+      }
+      
+      if (currentPermission === false) {
+        // 用户已拒绝，需要引导到设置页
+        return this.guideToSettings(scopeName, options);
+      }
+      
+      // 首次请求权限
+      return this.requestPermission(scopeName, options);
+      
+    } catch (error) {
+      console.error('Permission check failed:', error);
+      return false;
+    }
+  },
+
+  // 录音权限专门处理
+  async checkRecordPermission() {
+    return this.checkAndRequestPermission('scope.record', {
+      title: '需要录音权限',
+      content: '发送语音消息需要录音权限，请允许使用麦克风',
+      settingsText: '语音消息功能需要录音权限，请在设置中开启',
+    });
+  },
+
+  // 相机权限专门处理
+  async checkCameraPermission() {
+    return this.checkAndRequestPermission('scope.camera', {
+      title: '需要相机权限', 
+      content: '拍照发送图片需要相机权限',
+      settingsText: '拍照功能需要相机权限，请在设置中开启',
+    });
+  },
+
+  // 相册权限专门处理
+  async checkAlbumPermission() {
+    return this.checkAndRequestPermission('scope.writePhotosAlbum', {
+      title: '需要相册权限',
+      content: '保存图片到相册需要相册权限', 
+      settingsText: '保存图片功能需要相册权限，请在设置中开启',
+    });
+  },
+
+  // 引导用户到设置页面
+  guideToSettings(scopeName, options) {
+    return new Promise((resolve) => {
+      wx.showModal({
+        title: options.title || '权限申请',
+        content: options.settingsText || '需要相关权限才能使用该功能，请到设置页面开启',
+        confirmText: '去设置',
+        cancelText: '取消',
+        success: (res) => {
+          if (res.confirm) {
+            wx.openSetting({
+              success: (settingRes) => {
+                const hasPermission = settingRes.authSetting[scopeName] === true;
+                this.cachePermission(scopeName, hasPermission);
+                resolve(hasPermission);
+              },
+              fail: () => resolve(false),
+            });
+          } else {
+            resolve(false);
+          }
+        },
+      });
+    });
+  },
+
+  // 缓存权限结果
+  cachePermission(scopeName, hasPermission) {
+    this.permissionCache.set(scopeName, {
+      hasPermission,
+      timestamp: Date.now(),
+    });
+  },
+
+  // Promise化wx.getSetting
+  getSetting() {
+    return new Promise((resolve, reject) => {
+      wx.getSetting({
+        success: resolve,
+        fail: reject,
+      });
+    });
+  },
+
+  // 请求权限
+  requestPermission(scopeName, options) {
+    return new Promise((resolve) => {
+      wx.authorize({
+        scope: scopeName,
+        success: () => {
+          this.cachePermission(scopeName, true);
+          resolve(true);
+        },
+        fail: () => {
+          // 用户拒绝，引导到设置
+          this.guideToSettings(scopeName, options).then(resolve);
+        },
+      });
+    });
+  },
+};
+```
+
+## 🌐 网络请求限制处理
+
+### 域名白名单管理
+```javascript
+// 微信小程序域名白名单管理
+const DomainWhitelistManager = {
+  // 预配置的域名
+  allowedDomains: [
+    'https://api.im.qcloud.com',
+    'https://cos.ap-guangzhou.myqcloud.com',
+    'https://your-chat-api.com',
+  ],
+
+  // 检查URL是否在白名单中
+  isAllowedDomain(url) {
+    try {
+      const urlObj = new URL(url);
+      const domain = `${urlObj.protocol}//${urlObj.host}`;
+      
+      return this.allowedDomains.some(allowedDomain => 
+        domain.startsWith(allowedDomain)
+      );
+    } catch (error) {
+      console.error('Invalid URL:', url);
+      return false;
+    }
+  },
+
+  // 安全的网络请求包装
+  async safeRequest(url, options = {}) {
+    if (!this.isAllowedDomain(url)) {
+      throw new Error(`Domain not allowed: ${url}`);
+    }
+
+    return new Promise((resolve, reject) => {
+      wx.request({
+        url,
+        ...options,
+        success: resolve,
+        fail: reject,
+      });
+    });
+  },
+
+  // 文件上传域名检查
+  async safeUploadFile(url, options = {}) {
+    if (!this.isAllowedDomain(url)) {
+      throw new Error(`Upload domain not allowed: ${url}`);
+    }
+
+    return new Promise((resolve, reject) => {
+      wx.uploadFile({
+        url,
+        ...options,
+        success: resolve,
+        fail: reject,
+      });
+    });
+  },
+};
+```
+
+### 并发请求限制
+```javascript
+// 微信小程序并发请求限制管理
+const ConcurrentRequestManager = {
+  maxConcurrentRequests: 10, // 微信小程序最大并发数
+  activeRequests: new Set(),
+  requestQueue: [],
+
+  async request(url, options = {}) {
+    // 如果达到并发限制，加入队列
+    if (this.activeRequests.size >= this.maxConcurrentRequests) {
+      return new Promise((resolve, reject) => {
+        this.requestQueue.push({
+          url,
+          options,
+          resolve,
+          reject,
+        });
+      });
+    }
+
+    return this.executeRequest(url, options);
+  },
+
+  async executeRequest(url, options) {
+    const requestId = Symbol('request');
+    this.activeRequests.add(requestId);
+
+    try {
+      const result = await DomainWhitelistManager.safeRequest(url, options);
+      return result;
+    } finally {
+      this.activeRequests.delete(requestId);
+      this.processQueue();
+    }
+  },
+
+  processQueue() {
+    if (this.requestQueue.length > 0 && 
+        this.activeRequests.size < this.maxConcurrentRequests) {
+      
+      const { url, options, resolve, reject } = this.requestQueue.shift();
+      
+      this.executeRequest(url, options)
+        .then(resolve)
+        .catch(reject);
+    }
+  },
+};
+```

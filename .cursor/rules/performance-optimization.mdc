@@ -1,0 +1,376 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 小程序性能优化规则
+
+## ⚡ 渲染性能优化
+
+### setData 优化策略
+参考 [components/TUIChat/components/MessageInput/index.js](mdc:components/TUIChat/components/MessageInput/index.js) 的最佳实践：
+
+```javascript
+// ✅ 正确的setData使用方式
+methods: {
+  // 1. 批量更新数据，减少setData调用次数
+  updateMessageState(message) {
+    this.setData({
+      messageList: [...this.data.messageList, message],
+      unreadCount: this.data.unreadCount + 1,
+      lastUpdateTime: Date.now(),
+    });
+  },
+
+  // 2. 使用回调确保更新完成后执行后续逻辑
+  showConversation(conversationID) {
+    this.setData({
+      isShowConversation: true,
+      currentConversationID: conversationID,
+    }, () => {
+      // 确保DOM更新后再执行
+      const TUIChat = this.selectComponent('#TUIChat');
+      TUIChat.init();
+    });
+  },
+
+  // 3. 避免频繁更新，使用防抖
+  onInputChange: debounce(function(event) {
+    this.setData({
+      inputValue: event.detail.value,
+    });
+  }, 300),
+}
+
+// ❌ 错误的setData使用方式
+methods: {
+  updateMessage(message) {
+    // 错误：频繁调用setData
+    this.setData({ messageList: this.data.messageList });
+    this.setData({ unreadCount: this.data.unreadCount + 1 });
+    this.setData({ lastUpdateTime: Date.now() });
+  },
+}
+```
+
+### 长列表优化
+```javascript
+// 参考 [components/TUIChat/components/MessageList/index.js](mdc:components/TUIChat/components/MessageList/index.js) 设计
+Component({
+  data: {
+    messageList: [],
+    virtualListConfig: {
+      itemHeight: 80,          // 固定行高
+      bufferSize: 10,          // 缓冲区大小
+      maxRenderCount: 50,      // 最大渲染数量
+    },
+  },
+
+  methods: {
+    // 虚拟列表渲染优化
+    updateVirtualList() {
+      const { scrollTop, itemHeight, bufferSize } = this.data;
+      const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - bufferSize);
+      const endIndex = Math.min(
+        this.data.messageList.length - 1,
+        startIndex + this.data.virtualListConfig.maxRenderCount
+      );
+
+      this.setData({
+        visibleStartIndex: startIndex,
+        visibleEndIndex: endIndex,
+        renderList: this.data.messageList.slice(startIndex, endIndex + 1),
+      });
+    },
+
+    // 分页加载历史消息
+    loadMoreMessages() {
+      if (this.data.isLoading || this.data.isCompleted) return;
+      
+      this.setData({ isLoading: true });
+      
+      wx.$TUIKit.getMessageList({
+        conversationID: this.data.conversation.conversationID,
+        nextReqMessageID: this.data.nextReqMessageID,
+        count: 15, // 分页大小控制
+      }).then((res) => {
+        const { messageList, nextReqMessageID, isCompleted } = res.data;
+        
+        this.setData({
+          messageList: [...messageList, ...this.data.messageList],
+          nextReqMessageID,
+          isCompleted,
+          isLoading: false,
+        });
+      });
+    },
+  },
+});
+```
+
+### 图片和媒体优化
+```javascript
+// 图片懒加载和压缩
+methods: {
+  handleImageUpload(file) {
+    // 图片压缩
+    wx.compressImage({
+      src: file.path,
+      quality: 80,
+      success: (res) => {
+        this.uploadImage(res.tempFilePath);
+      },
+    });
+  },
+
+  // 预加载关键图片
+  preloadImages() {
+    const imageUrls = this.data.messageList
+      .filter(msg => msg.type === 'image')
+      .map(msg => msg.imageUrl)
+      .slice(0, 5); // 只预加载前5张
+
+    imageUrls.forEach(url => {
+      wx.downloadFile({ url });
+    });
+  },
+
+  // 图片懒加载
+  onImageIntersect(e) {
+    const { intersectionRatio, dataset } = e.detail;
+    if (intersectionRatio > 0 && dataset.imageUrl) {
+      this.loadImage(dataset.imageUrl);
+    }
+  },
+}
+```
+
+## 🚀 包体积优化
+
+### 分包策略
+```javascript
+// app.json 分包配置
+{
+  "pages": [
+    "pages/index/index"
+  ],
+  "subPackages": [
+    {
+      "root": "packages/chat",
+      "name": "chat",
+      "pages": [
+        "pages/conversation/index",
+        "pages/message/index"
+      ],
+      "independent": false
+    },
+    {
+      "root": "packages/contact", 
+      "name": "contact",
+      "pages": [
+        "pages/list/index",
+        "pages/detail/index"
+      ],
+      "independent": true
+    }
+  ],
+  "preloadRule": {
+    "pages/index/index": {
+      "network": "all",
+      "packages": ["chat"]
+    }
+  }
+}
+```
+
+### 按需加载组件
+```javascript
+// 动态导入组件
+methods: {
+  async loadChatComponent() {
+    // 只有在需要时才加载聊天组件
+    if (!this.chatComponentLoaded) {
+      const chatModule = await import('../../components/TUIChat/index');
+      this.chatComponent = chatModule.default;
+      this.chatComponentLoaded = true;
+    }
+    return this.chatComponent;
+  },
+
+  // 懒加载消息类型组件
+  async renderMessage(message) {
+    const componentMap = {
+      text: () => import('../MessageElements/TextMessage/index'),
+      image: () => import('../MessageElements/ImageMessage/index'),
+      audio: () => import('../MessageElements/AudioMessage/index'),
+    };
+
+    const Component = await componentMap[message.type]();
+    return Component.default;
+  },
+}
+```
+
+## 📱 内存管理
+
+### 事件监听管理
+参考项目中的生命周期管理模式：
+```javascript
+Component({
+  lifetimes: {
+    attached() {
+      // 绑定事件监听器
+      wx.$TUIKit.on(wx.TencentCloudChat.EVENT.MESSAGE_RECEIVED, this.$onMessageReceived, this);
+      wx.$TUIKit.on(wx.TencentCloudChat.EVENT.MESSAGE_REVOKED, this.$onMessageRevoked, this);
+      
+      // 存储监听器引用，方便清理
+      this.listeners = [
+        { event: wx.TencentCloudChat.EVENT.MESSAGE_RECEIVED, handler: this.$onMessageReceived },
+        { event: wx.TencentCloudChat.EVENT.MESSAGE_REVOKED, handler: this.$onMessageRevoked },
+      ];
+    },
+
+    detached() {
+      // 清理所有事件监听器
+      this.listeners?.forEach(({ event, handler }) => {
+        wx.$TUIKit.off(event, handler);
+      });
+      
+      // 清理定时器
+      if (this.timer) {
+        clearTimeout(this.timer);
+        this.timer = null;
+      }
+      
+      // 清理录音管理器
+      if (this.recorderManager) {
+        this.recorderManager.stop();
+        this.recorderManager = null;
+      }
+    },
+  },
+});
+```
+
+### 数据清理策略
+```javascript
+methods: {
+  // 定期清理过期数据
+  cleanupExpiredData() {
+    const expireTime = Date.now() - 24 * 60 * 60 * 1000; // 24小时前
+    
+    const validMessages = this.data.messageList.filter(msg => 
+      msg.timestamp > expireTime
+    );
+    
+    if (validMessages.length !== this.data.messageList.length) {
+      this.setData({
+        messageList: validMessages,
+      });
+    }
+  },
+
+  // 清理缓存文件
+  cleanupCache() {
+    wx.getStorageInfo({
+      success: (res) => {
+        // 如果缓存超过50MB，清理最老的数据
+        if (res.currentSize > 50 * 1024) {
+          wx.clearStorage();
+        }
+      },
+    });
+  },
+}
+```
+
+## 🌐 网络优化
+
+### 请求优化策略
+```javascript
+// 请求去重和缓存
+const RequestManager = {
+  cache: new Map(),
+  pendingRequests: new Map(),
+
+  // 带缓存的请求
+  async request(url, options = {}) {
+    const cacheKey = `${url}${JSON.stringify(options)}`;
+    
+    // 检查缓存
+    if (this.cache.has(cacheKey)) {
+      const cached = this.cache.get(cacheKey);
+      if (Date.now() - cached.timestamp < 5 * 60 * 1000) { // 5分钟缓存
+        return cached.data;
+      }
+    }
+
+    // 检查是否有相同请求正在进行
+    if (this.pendingRequests.has(cacheKey)) {
+      return this.pendingRequests.get(cacheKey);
+    }
+
+    // 发起新请求
+    const promise = wx.request({ url, ...options });
+    this.pendingRequests.set(cacheKey, promise);
+
+    try {
+      const result = await promise;
+      this.cache.set(cacheKey, {
+        data: result,
+        timestamp: Date.now(),
+      });
+      return result;
+    } finally {
+      this.pendingRequests.delete(cacheKey);
+    }
+  },
+
+  // 批量请求优化
+  batchRequest(requests) {
+    return Promise.all(
+      requests.map(req => this.request(req.url, req.options))
+    );
+  },
+};
+```
+
+### 上传优化
+```javascript
+methods: {
+  // 文件分片上传
+  async uploadLargeFile(file) {
+    const chunkSize = 1024 * 1024; // 1MB per chunk
+    const chunks = Math.ceil(file.size / chunkSize);
+    const uploadPromises = [];
+
+    for (let i = 0; i < chunks; i++) {
+      const start = i * chunkSize;
+      const end = Math.min(start + chunkSize, file.size);
+      const chunk = file.slice(start, end);
+      
+      uploadPromises.push(
+        this.uploadChunk(chunk, i, chunks, file.name)
+      );
+    }
+
+    return Promise.all(uploadPromises);
+  },
+
+  // 并发控制上传
+  async uploadWithConcurrencyLimit(files) {
+    const limit = 3; // 最大并发数
+    const results = [];
+    
+    for (let i = 0; i < files.length; i += limit) {
+      const batch = files.slice(i, i + limit);
+      const batchResults = await Promise.all(
+        batch.map(file => this.uploadFile(file))
+      );
+      results.push(...batchResults);
+    }
+    
+    return results;
+  },
+}
+```

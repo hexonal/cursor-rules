@@ -1,0 +1,256 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 小程序开发最佳实践总结
+
+## 📋 规则体系概览
+
+本项目基于腾讯云即时通信(IM) chat-uikit-wechat 的优秀源码分析，总结出一套完整的小程序开发规则体系：
+
+### 🏗️ 架构规则
+- **[架构设计规则](mdc:miniprogram-architecture.mdc)** - 分层架构、组件化设计、模块命名规范
+- **[设计模式应用](mdc:design-patterns.mdc)** - 观察者、工厂、策略、适配器等模式在小程序中的应用
+
+### 📝 编码规则  
+- **[编码规范](mdc:.cursor/rules/coding-standards.mdc)** - 命名约定、代码结构、注释规范、错误处理
+- **[性能优化](mdc:performance-optimization.mdc)** - setData优化、长列表优化、包体积优化
+
+### 🔍 质量保证
+- **[测试与质量](mdc:testing-quality.mdc)** - 单元测试、集成测试、代码质量检查、性能监控
+
+## 🎯 核心设计原则
+
+### 1. 单一职责原则 (SRP)
+```javascript
+// ✅ 好的实践 - 每个组件只负责一个功能
+Component({
+  // TextMessage组件只负责文本消息的显示
+  properties: {
+    message: Object,
+    isMine: Boolean,
+  },
+  methods: {
+    // 只包含文本消息相关的方法
+    parseTextContent() {},
+    handleTextClick() {},
+  },
+});
+
+// ❌ 避免 - 一个组件负责多种消息类型
+Component({
+  methods: {
+    renderTextMessage() {},
+    renderImageMessage() {},
+    renderAudioMessage() {}, // 应该拆分为独立组件
+  },
+});
+```
+
+### 2. 开闭原则 (OCP)
+```javascript
+// 对扩展开放，对修改封闭
+class MessageFactory {
+  static messageTypes = new Map();
+  
+  // 可以扩展新的消息类型，无需修改现有代码
+  static registerMessageType(type, component) {
+    this.messageTypes.set(type, component);
+  }
+  
+  static createMessage(type, data) {
+    const Component = this.messageTypes.get(type);
+    return Component ? new Component(data) : null;
+  }
+}
+```
+
+### 3. 依赖倒置原则 (DIP)
+```javascript
+// 依赖抽象而非具体实现
+class MessageSender {
+  constructor(chatService) {
+    this.chatService = chatService; // 依赖接口，而非具体的wx.$TUIKit
+  }
+  
+  async sendMessage(message) {
+    return this.chatService.send(message);
+  }
+}
+```
+
+## 🔧 关键技术模式
+
+### 组件通信模式
+参考 [index.js](mdc:index.js) 和 [index.wxml](mdc:index.wxml) 的设计：
+
+```javascript
+// 父子组件通信
+Component({
+  properties: {
+    // 父组件传递数据
+    conversationID: {
+      type: String,
+      observer(newVal) {
+        this.handleConversationChange(newVal);
+      },
+    },
+  },
+  
+  methods: {
+    handleUserAction() {
+      // 子组件向父组件传递事件
+      this.triggerEvent('customEvent', {
+        data: this.data.someData,
+      });
+    },
+  },
+});
+```
+
+### 生命周期管理模式
+参考 [MessageList/index.js](mdc:components/TUIChat/components/MessageList/index.js)：
+
+```javascript
+Component({
+  lifetimes: {
+    attached() {
+      // 绑定事件监听
+      this.bindEvents();
+    },
+    
+    detached() {
+      // 必须清理资源，防止内存泄漏
+      this.unbindEvents();
+      this.clearTimers();
+    },
+  },
+  
+  methods: {
+    bindEvents() {
+      wx.$TUIKit.on(EVENT.MESSAGE_RECEIVED, this.onMessageReceived, this);
+    },
+    
+    unbindEvents() {
+      wx.$TUIKit.off(EVENT.MESSAGE_RECEIVED, this.onMessageReceived);
+    },
+  },
+});
+```
+
+### 错误处理模式
+参考 [constant.js](mdc:utils/constant.js) 的错误码设计：
+
+```javascript
+// 统一错误处理
+const ErrorHandler = {
+  handle(error) {
+    const errorMap = {
+      [CODES.NETWORK_ERROR]: '网络连接失败',
+      [CODES.AUTH_FAILED]: '身份验证失败',
+      [CODES.PERMISSION_DENIED]: '权限不足',
+    };
+    
+    const message = errorMap[error.code] || '操作失败';
+    wx.showToast({ title: message, icon: 'none' });
+    
+    // 记录错误日志
+    logger.error('Error handled:', error);
+  },
+};
+```
+
+## 📱 小程序特定优化
+
+### setData优化策略
+```javascript
+// ✅ 批量更新
+this.setData({
+  'messageList[0].status': 'read',
+  'conversation.unreadCount': 0,
+  lastUpdateTime: Date.now(),
+});
+
+// ❌ 频繁调用
+this.setData({ 'messageList[0].status': 'read' });
+this.setData({ 'conversation.unreadCount': 0 });
+this.setData({ lastUpdateTime: Date.now() });
+```
+
+### 分包加载策略
+```javascript
+// app.json
+{
+  "subPackages": [
+    {
+      "root": "packages/chat",
+      "pages": ["pages/conversation/index"],
+      "independent": true
+    }
+  ],
+  "preloadRule": {
+    "pages/index/index": {
+      "network": "all",
+      "packages": ["chat"]
+    }
+  }
+}
+```
+
+## 🌟 代码质量标准
+
+### 复杂度控制
+- **函数圈复杂度** ≤ 10
+- **文件行数** ≤ 500行
+- **组件方法数** ≤ 20个
+- **嵌套层数** ≤ 4层
+
+### 命名规范
+- **组件名**：PascalCase (MessageInput)
+- **方法名**：camelCase (handleUserInput)
+- **常量名**：UPPER_SNAKE_CASE (MAX_MESSAGE_LENGTH)
+- **文件名**：kebab-case (message-parser.js)
+
+### 注释要求
+- **文件头**：必须包含功能说明、作者、版本
+- **函数注释**：复杂函数必须有JSDoc注释
+- **业务逻辑**：关键业务逻辑必须有行内注释
+
+## 🚀 开发流程
+
+### 1. 需求分析阶段
+- 确定功能边界和职责
+- 设计组件接口和数据流
+- 评估性能影响
+
+### 2. 开发阶段
+- 遵循编码规范
+- 实现单元测试
+- 进行代码审查
+
+### 3. 测试阶段
+- 单元测试覆盖率 ≥ 80%
+- 集成测试验证功能
+- 性能测试验证指标
+
+### 4. 部署阶段
+- 代码质量检查通过
+- 包体积符合要求
+- 性能指标达标
+
+## 🔄 持续改进
+
+### 定期Review
+- **周度**：代码质量review
+- **月度**：架构设计review  
+- **季度**：技术债务清理
+
+### 指标监控
+- **性能指标**：页面加载时间、setData耗时
+- **质量指标**：Bug数量、代码覆盖率
+- **用户体验**：卡顿率、崩溃率
+
+---
+
+> 💡 **提示**：这套规则体系基于优秀的开源项目实践总结而来，建议结合具体业务场景进行调整和优化。持续学习和改进是保持代码质量的关键。
