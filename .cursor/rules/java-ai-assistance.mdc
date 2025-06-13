@@ -1,7 +1,7 @@
 ---
 description: 
 globs: 
-alwaysApply: false
+alwaysApply: true
 ---
 ---
 description: Java项目AI辅助开发规范 (从java-code-development-and-quality.mdc中提取)
