@@ -59,7 +59,7 @@ alwaysApply: true
 - 中间件、技术方案选型
 - 应用依赖关系
 - 推荐使用 mermaid 语法绘制架构图
-- **所有技术选型、架构设计、模块划分、依赖管理等，必须严格遵循《鱼泡Java项目架构与结构规范》(@java-project-architecture-and-structure.mdc)的强制要求。如有特殊情况需单独说明并经架构组评审确认。**
+- **所有技术选型、架构设计、模块划分、依赖管理等，必须严格遵循《鱼泡Java项目架构与结构规范》([java-project-architecture-and-structure.mdc](mdc:.cursor/rules/java-project-architecture-and-structure.mdc))的强制要求。如有特殊情况需单独说明并经架构组评审确认。**
 
 ## 四、详细设计
 
@@ -72,7 +72,7 @@ alwaysApply: true
 - 定时任务设计
 - 数据恢复、迁移实现
 - 二方、三方依赖汇总和拉齐（Admin、各端、测试、后端其他业务）
-- **详细设计涉及的所有技术实现、依赖、配置、资源管理等，均需符合《鱼泡Java项目架构与结构规范》(@java-project-architecture-and-structure.mdc)的强制要求。**
+- **详细设计涉及的所有技术实现、依赖、配置、资源管理等，均需符合《鱼泡Java项目架构与结构规范》([java-project-architecture-and-structure.mdc](mdc:.cursor/rules/java-project-architecture-and-structure.mdc))的强制要求。**
 
 ## 五、模型设计
 
@@ -124,7 +124,7 @@ alwaysApply: true
 - **激活结构化与发散性思维能力 (如调用 `mcp_sequential-thinking_sequentialthinking`)**：对于需要系统性梳理、多角度权衡或创新性突破的复杂问题，强烈推荐运用或引导AI调用 Sequential Thinking 相关的MCP能力。该方法鼓励通过定义总思考步数、分支探索、阶段性修正等方式，进行多轮次、迭代式、可追溯的深度思考。这有助于将一个庞杂的问题分解为有序的思考单元，系统性地探索解决方案空间，验证关键假设，从而显著提升方案的逻辑严谨性、覆盖面和创新深度。
 
 ### 10.2 促进AI与规范的深度融合
-- **明确规范引导AI**：在与AI协作编写技术方案时，应主动提供本项目相关的核心设计规范文档（如本规范 `@tech-solution-doc-spec.mdc`，以及 `@java-code-development-and-quality.mdc`, `@java-project-architecture-and-structure.mdc` 等）作为AI的核心上下文。要求AI在生成内容时严格遵循这些规范。
+- **明确规范引导AI**：在与AI协作编写技术方案时，应主动提供本项目相关的核心设计规范文档（如本规范 [tech-solution-doc-spec.mdc](mdc:.cursor/rules/tech-solution-doc-spec.mdc)，以及 [java-code-development-and-quality.mdc](mdc:.cursor/rules/java-code-development-and-quality.mdc), [java-project-architecture-and-structure.mdc](mdc:.cursor/rules/java-project-architecture-and-structure.mdc) 等）作为AI的核心上下文。要求AI在生成内容时严格遵循这些规范。
 - **具体化指令与反馈**：向AI提问或要求生成方案内容时，指令应尽可能具体，并明确指出需要参照哪条规范。在AI生成内容后，基于规范进行细致审查，并给出明确的、指向具体规范条款的反馈，帮助AI更好地理解和应用规范。
 - **利用AI进行规范检查与优化建议**：可尝试引导AI基于已提供的规范文档，对方案的草稿进行初步的规范符合性检查，或就某些设计点征询其是否符合某项规范的建议。
 
