@@ -1,0 +1,110 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Vue3 + UniApp TypeScript 类型与接口严谨规范（chat-uikit-uniapp 范例）
+
+> 适用于所有基于 Vue3 + UniApp 的项目，参考 chat-uikit-uniapp（Vue3 版）源码最佳实践。所有规范均分为【强制（MUST）】【推荐（SHOULD）】【禁止（MUST NOT）】，并补充边界、变更同步要求。
+
+---
+
+## 规则适用强制边界与未覆盖场景处理
+- 【MUST】仅允许对本规范明确覆盖的类型定义、接口声明、类型导出、类型使用方式进行修改，且必须严格遵循对应条款。
+- 【MUST NOT】不得修改未被本规范明确提及的类型结构、接口声明、类型导出、类型使用方式，除非先补充规则并团队评审通过。
+- 【MUST】变更发起人需在 PR/commit 明确标注所依据的规则条款编号或链接。
+- 【MUST】reviewer 必须逐条核查变更是否有规则依据，无依据则驳回并要求补充规则。
+- 【MUST】所有规则变更、例外、评审意见需归档，便于历史回溯和责任追踪。
+- 【SHOULD】团队定期回顾规则，版本管理，确保与实际开发同步。
+- 【正例】类型结构调整、接口重命名，PR 说明"依据2.类型定义风格"，同步更新依赖、文档、测试。
+- 【反例】直接新增/重命名类型或接口，无规则依据，PR被驳回。
+
+---
+
+## 1. 类型定义风格
+- 【MUST】统一使用 interface 定义对象类型，type 用于联合类型、工具类型。
+- 【MUST】类型名采用大驼峰（如 MessageItem、UserProfile）。
+- 【MUST NOT】使用 any，优先用 unknown 或具体类型。
+- 【MUST】所有类型、接口、枚举、常量等需有注释说明。
+- 【SHOULD】类型定义应便于扩展和复用。
+
+### 正例
+```ts
+/** 用户信息 */
+export interface UserProfile {
+  id: string;
+  name: string;
+}
+/** 消息类型 */
+export type MessageType = 'text' | 'image';
+```
+
+### 反例
+```ts
+type messageitem = {
+  id: any;
+  content: any;
+}
+```
+
+## 2. 组件类型声明
+- 【MUST】组件 props、emits、事件、响应式数据等均需显式声明类型。
+- 【MUST】事件回调类型需完整声明参数和返回值。
+- 【MUST】类型声明与实际用法保持一致，禁止类型漂移。
+- 【MUST NOT】props、emits、事件等类型声明缺失或与实现不符。
+
+### 正例
+```ts
+interface Props {
+  user: UserProfile;
+  onSend: (msg: MessageItem) => void;
+}
+```
+
+## 3. 泛型使用
+- 【MUST】复杂数据结构、工具函数、API 响应等建议用泛型提升类型复用性。
+- 【MUST】泛型参数命名简洁明了（如 T、K、V、R）。
+- 【MUST NOT】滥用泛型导致类型不清晰。
+
+### 正例
+```ts
+function useList<T>(items: T[]): T[] {
+  return items;
+}
+```
+
+## 4. 类型导出与复用
+- 【MUST】公共类型、接口统一放在 interface.ts，模块内类型可单独文件。
+- 【MUST】类型导出用 export interface/type，禁止默认导出。
+- 【MUST】复用类型优先 import 公共定义，避免重复声明。
+- 【MUST】类型变更需同步依赖方、文档、测试。
+
+## 5. 其他规范
+- 【MUST NOT】在业务逻辑中绕过类型检查（如 as any、@ts-ignore）。
+- 【MUST】类型、接口、枚举、常量等需有注释说明。
+- 【MUST】类型变更需同步更新依赖、文档、测试。
+
+## 6. 适用范围与边界说明
+- 【MUST】本规范适用于所有类型定义、接口声明、类型导出、类型使用方式。
+- 【MUST NOT】不得修改未被本规范明确提及的类型结构、接口声明、类型导出、类型使用方式。
+- 如遇特殊业务需求，可在 README.md 说明例外并团队评审。
+
+## 7. 正反例
+### 正例
+```ts
+/** 用户信息 */
+export interface UserProfile {
+  id: string;
+  name: string;
+}
+/** 消息类型 */
+export type MessageType = 'text' | 'image';
+```
+### 反例
+```ts
+type messageitem = {
+  id: any;
+  content: any;
+}
+// as any、@ts-ignore、类型声明缺失
+```

@@ -1,0 +1,167 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Vue3 + UniApp 组件开发严谨规范（chat-uikit-uniapp 范例）
+
+> 适用于所有基于 Vue3 + UniApp 的项目，参考 chat-uikit-uniapp（Vue3 版）源码最佳实践。所有规范均分为【强制（MUST）】【推荐（SHOULD）】【禁止（MUST NOT）】，并补充边界、变更同步要求。
+
+---
+
+## 规则适用强制边界与未覆盖场景处理
+
+### 1. 明确覆盖范围（举例）
+- 【MUST】仅允许对下列明确覆盖内容进行修改，且必须严格遵循对应条款：
+  - 组件 props、emits、slots、expose 的声明、类型、默认值、注释、文档
+  - 组件样式（scoped、BEM、SCSS 变量、主题切换）
+  - 生命周期钩子、响应式数据、watch、watchEffect
+  - 事件流（props/emits、provide/inject、uni.$emit/uni.$on、store）
+  - 组件目录结构、命名、README、单元测试
+  - 组件复用（组合式函数、动态组件、插槽、mixin）
+  - 组件暴露方法、文档、注释、测试
+
+### 2. 未覆盖范围（举例）
+- 【MUST NOT】对下列未被本规范明确覆盖的内容进行任何修改、重构、优化、删除：
+  - 新的 Vue/UniApp API、新语法糖、框架升级相关用法
+  - 特殊业务 hack、第三方库用法、全局配置、自动化脚本
+  - 组件外部依赖、全局样式、国际化资源
+  - 任何未在本规范条款中出现的代码结构、写法、模式
+
+### 3. 评审流程
+- 【MUST】变更发起人需在 PR/commit 明确标注所依据的规则条款编号或链接。
+- 【MUST】reviewer 必须逐条核查变更是否有规则依据，无依据则驳回并要求补充规则。
+- 【MUST】如遇未覆盖场景，需先补充规则，团队评审通过后方可实施变更。
+- 【SHOULD】评审意见、补充规则、变更记录需归档，便于回溯。
+
+### 4. 例外流程
+- 【MUST】紧急修复需在 PR/commit/README.md 说明例外理由，团队临时会议评审，补充规则后补提正式 PR。
+- 【MUST】所有例外变更需在规则体系中补充说明，并归档。
+
+### 5. 适用范围与团队共识
+- 【MUST】本规范适用于所有公共组件、业务组件、UI 复用组件、组合式函数、工具函数、全局样式、国际化资源。
+- 【MUST NOT】不得修改未被本规范明确提及的代码结构、写法、模式。
+- 【SHOULD】团队定期回顾规则，版本管理，确保与实际开发同步。
+- 【MUST】所有规则变更、例外、评审意见需归档，便于历史回溯和责任追踪。
+- 【SHOULD】重要规则变更需团队会议讨论并形成会议纪要。
+- 如遇特殊业务需求，可在 README.md 说明例外并团队评审。
+
+### 6. 变更记录与回溯机制
+- 【MUST】所有规则变更、例外、评审意见需归档，便于历史回溯和责任追踪。
+- 【SHOULD】重要规则变更需团队会议讨论并形成会议纪要。
+
+### 7. 正反例说明
+- 【正例】
+  - 组件 props 类型变更，PR 说明"依据2.Props/Emits/Slots/Expose类型声明与注释"，同步更新文档、测试、依赖组件。
+  - 新增插槽，先补充规则条款，团队评审通过后实施。
+- 【反例】
+  - 直接引入新API/新语法糖，无规则依据，PR被驳回。
+  - 紧急修复未补充规则、未评审，后续被回滚。
+
+---
+
+## 1. 组件结构与文件组织
+- 【MUST】每个组件单独目录，包含 index.vue、index.ts、style/、utils/、README.md。
+- 【MUST】文件命名采用大驼峰，目录小写中划线。
+- 【MUST】组件结构为 `<template> + <script setup lang="ts"> + <style scoped lang="scss">`。
+- 【SHOULD】README.md 需同步 props、emits、slots、expose、用法示例。
+- 【MUST NOT】业务组件与通用组件混放。
+- 【变更同步】如组件 props/emits/slots/暴露方法有变更，README、依赖组件、测试用例、类型定义必须同步更新。
+
+---
+
+## 2. Props/Emits/Slots/Expose 类型声明与注释
+- 【MUST】所有 props 用 defineProps 并声明类型，withDefaults 设置默认值。
+- 【MUST】emits 用 defineEmits 明确类型，事件参数类型完整。
+- 【MUST】所有插槽用 defineSlots 并注释用途、类型。
+- 【MUST】组件暴露方法用 defineExpose，类型与用途需注释。
+- 【MUST】所有 props、emits、slots、expose 必须有 JSDoc 注释。
+- 【MUST NOT】props 透传到根节点（v-bind="$attrs"），除非有特殊需求并注明。
+- 【变更同步】props/emits/slots/暴露方法变更时，需同步类型定义、文档、依赖组件、测试用例，并在 PR/commit 说明 breaking change。
+
+### 正例
+```vue
+<script setup lang="ts">
+/**
+ * @prop title 标题文本
+ * @prop count 计数，默认0
+ */
+interface Props {
+  title: string;
+  count?: number;
+}
+const props = withDefaults(defineProps<Props>(), { count: 0 });
+/**
+ * @event close-chat 关闭事件
+ */
+const emits = defineEmits<{(e: 'close-chat'): void}>();
+/**
+ * @slot default 默认插槽，显示内容
+ */
+const slots = defineSlots<{ default: () => any }>();
+/**
+ * @expose reset 重置方法
+ */
+defineExpose({ reset });
+</script>
+```
+
+---
+
+## 3. 事件与数据流
+- 【MUST】父子通信用 props/emits，跨层用 provide/inject 或全局 store。
+- 【SHOULD】复杂事件流用 uni.$emit/uni.$on，事件名、参数需注释。
+- 【MUST NOT】props 直接修改，需 emit 事件通知父组件。
+- 【变更同步】事件名/参数变更需同步依赖组件、文档、测试。
+
+## 4. 生命周期与副作用管理
+- 【MUST】生命周期统一用 Composition API（onMounted、onUnmounted 等）。
+- 【MUST】副作用（定时器、订阅、事件监听）必须在 onUnmounted 清理。
+- 【SHOULD】watch、watchEffect 用于响应式副作用，避免全局污染。
+- 【变更同步】副作用逻辑变更需同步注释、文档、测试。
+
+## 5. 响应式数据与性能
+- 【MUST】局部状态用 ref/ reactive，复杂对象拆分为小粒度响应式。
+- 【MUST】computed 用于派生数据，避免重复计算。
+- 【MUST】大量数据渲染用虚拟列表，避免 v-for 全量渲染。
+- 【MUST NOT】在响应式对象上挂载非响应式属性。
+- 【变更同步】数据结构变更需同步类型、依赖方、测试。
+
+## 6. 组件复用与扩展
+- 【MUST】通用逻辑抽离为组合式函数（useXxx），放入 composables/。
+- 【MUST】复用性强的 UI 组件放入 components/common/。
+- 【SHOULD】支持动态组件、插槽扩展，复杂场景可用高阶组件或 mixin。
+- 【变更同步】复用逻辑变更需同步依赖组件、文档、测试。
+
+## 7. 组件样式与主题
+- 【MUST】样式必须 scoped，采用 BEM 命名，变量用 SCSS 统一管理。
+- 【MUST】支持主题切换，样式响应式，禁止内联样式。
+- 【SHOULD】响应式样式用 class/bind，避免 v-if/v-show 控制样式。
+- 【变更同步】样式变量/主题变更需同步文档、依赖样式、通知相关开发者。
+
+## 8. 组件文档与注释
+- 【MUST】每个组件目录下有 README.md，说明 props、emits、slots、expose、用法示例。
+- 【MUST】关键 props、事件、插槽、暴露方法均需 JSDoc 注释。
+- 【变更同步】文档与注释需与代码同步，变更时一并提交。
+
+## 9. 组件测试与可维护性
+- 【MUST】组件需有单元测试（如 jest、vitest），覆盖核心逻辑和边界。
+- 【SHOULD】重要 UI 组件快照测试，复杂交互用 mock。
+- 【MUST】组件代码保持单一职责，便于维护和重构。
+- 【变更同步】接口/逻辑变更需同步测试用例。
+
+## 10. 反例
+- props、emits、slots、expose 无类型或注释
+- 生命周期副作用未清理
+- 响应式对象滥用 any
+- 组件样式未 scoped 或无 BEM
+- 组件无文档、无测试
+- 变更未同步类型、文档、依赖方、测试
+- 未按规则补充流程直接修改未覆盖内容
+
+---
+
+## 适用范围与边界说明
+- 【MUST】本规范适用于所有公共组件、业务组件、UI 复用组件、组合式函数、工具函数、全局样式、国际化资源。
+- 【MUST】所有规则变更、例外、评审意见需归档，便于历史回溯和责任追踪。
+- 【SHOULD】重要规则变更需团队会议讨论并形成会议纪要。

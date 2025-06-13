@@ -1,0 +1,49 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Vue3 + UniApp 国际化与本地化规范（chat-uikit-uniapp 范例）
+
+> 适用于所有基于 Vue3 + UniApp 的项目，参考 chat-uikit-uniapp（Vue3 版）源码实践。
+
+## 1. 目录结构与资源管理
+- 多语言资源统一放在 locales/ 目录，按语言分子目录（如 en/、zh_cn/、zh_tw/）。
+- 每种语言下按模块拆分 json 文件，避免大文件。
+
+### 正例
+```
+locales/
+  en/
+    common.json
+    chat.json
+  zh_cn/
+    common.json
+    chat.json
+```
+
+## 2. 组件/页面多语言集成
+- 组件/页面所有文案均用 i18n 函数获取，不允许硬编码中文/英文。
+- 推荐统一用 TUITranslateService.t('key') 或 $t('key')。
+
+### 正例
+```vue
+<span>{{ $t('chat.发送') }}</span>
+```
+
+### 反例
+```vue
+<span>发送</span>
+```
+
+## 3. 动态语言切换
+- 支持运行时切换语言，切换后页面自动刷新。
+- 语言切换逻辑统一封装在 i18n 工具层，组件/页面只调用切换方法。
+
+## 4. 地区适配
+- 时间、数字、货币等格式化用 i18n/国际化库（如 dayjs、Intl）。
+- 支持文本方向（如阿拉伯语 RTL）。
+
+## 5. 其他规范
+- 所有多语言 key 需有注释说明。
+- 新增语言时按 locales 目录结构扩展，避免混用。

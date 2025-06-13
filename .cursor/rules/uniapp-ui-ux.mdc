@@ -1,0 +1,40 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Vue3 + UniApp UI/UX 设计与交互规范（chat-uikit-uniapp 范例）
+
+> 适用于所有基于 Vue3 + UniApp 的项目，参考 chat-uikit-uniapp（Vue3 版）源码实践。
+
+## 1. 组件可复用性与可配置性
+- 组件设计需支持 props 配置，满足不同场景复用。
+- 组件内部禁止硬编码业务逻辑，通用性强的参数需暴露为 props。
+- 复用性强的组件放入 components/common/，业务组件仅在本模块内使用。
+
+## 2. 交互反馈与触摸事件
+- 所有交互操作（点击、滑动、长按等）需有视觉反馈（如高亮、动画、Toast）。
+- 触摸事件统一用 @tap/@touchstart/@longpress，避免直接用 @click 以兼容多端。
+- 重要操作需二次确认（如删除、退出等）。
+
+## 3. 响应式设计与布局自适应
+- 所有页面和组件需适配不同屏幕尺寸，布局用 flex + rpx 实现自适应。
+- 禁止固定宽高，优先用 min/max/auto。
+
+## 4. 错误与空态处理
+- 所有异步操作需有 loading、错误、空态反馈。
+- 错误信息需友好、可本地化，避免直接输出原始异常。
+
+### 正例
+```vue
+<template>
+  <div v-if="loading">加载中...</div>
+  <div v-else-if="error">{{ errorMsg }}</div>
+  <div v-else-if="list.length === 0">暂无数据</div>
+  <div v-else>...</div>
+</template>
+```
+
+## 5. 其他规范
+- 交互、动画、反馈等需有注释说明。
+- 组件/页面需支持无障碍（如 aria 属性、键盘操作等）。

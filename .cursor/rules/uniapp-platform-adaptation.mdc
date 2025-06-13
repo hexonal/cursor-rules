@@ -1,0 +1,86 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Vue3 + UniApp 跨平台适配严谨规范（chat-uikit-uniapp 范例）
+
+> 适用于所有基于 Vue3 + UniApp 的项目，参考 chat-uikit-uniapp（Vue3 版）源码最佳实践。所有规范均分为【强制（MUST）】【推荐（SHOULD）】【禁止（MUST NOT）】，并补充边界、变更同步要求。
+
+---
+
+## 规则适用强制边界与未覆盖场景处理
+- 【MUST】仅允许对本规范明确覆盖的跨平台适配方式、平台判断、条件编译、样式适配、API 封装进行修改，且必须严格遵循对应条款。
+- 【MUST NOT】不得修改未被本规范明确提及的跨平台适配方式、平台判断、条件编译、样式适配、API 封装，除非先补充规则并团队评审通过。
+- 【MUST】变更发起人需在 PR/commit 明确标注所依据的规则条款编号或链接。
+- 【MUST】reviewer 必须逐条核查变更是否有规则依据，无依据则驳回并要求补充规则。
+- 【MUST】所有规则变更、例外、评审意见需归档，便于历史回溯和责任追踪。
+- 【SHOULD】团队定期回顾规则，版本管理，确保与实际开发同步。
+- 【正例】平台判断方式调整，PR 说明"依据1.平台环境判断"，同步更新依赖、文档。
+- 【反例】直接新增/修改平台判断、条件编译、API 封装，无规则依据，PR被驳回。
+
+---
+
+## 1. 平台环境判断
+- 【MUST】统一使用工具函数（如 utils/env.ts）判断平台类型（isH5、isWeChat、isApp、isPC、isMobile、isUniFrameWork）。
+- 【MUST NOT】在业务代码中硬编码平台字符串（如 if (platform === 'h5')）。
+- 【MUST】平台判断逻辑变更需同步依赖方、文档、测试。
+
+### 正例
+```ts
+import { isH5, isWeChat } from '@/utils/env';
+if (isH5) { /* ... */ }
+```
+
+### 反例
+```ts
+if (platform === 'h5') { /* ... */ }
+```
+
+## 2. 条件编译规范
+- 【MUST】仅在必须区分平台的场景下使用条件编译（如 #ifdef H5、#ifdef MP-WEIXIN）。
+- 【MUST】条件编译代码块应有注释说明，避免滥用。
+- 【MUST NOT】无注释、无依据的条件编译。
+
+### 正例
+```js
+// #ifdef H5
+console.log('仅H5可见');
+// #endif
+```
+
+## 3. 样式适配
+- 【MUST】统一使用 rpx 单位，配合 SCSS 变量实现多端兼容。
+- 【MUST】主题定制用 SCSS 变量和 mixin，样式文件分平台独立维护（如 style/h5/、style/web/）。
+- 【MUST】样式适配变更需同步依赖方、文档、测试。
+
+## 4. 平台差异 API 封装
+- 【MUST】平台相关 API（如 uni、wx、window）统一封装在 utils 层，组件/业务代码只调用封装方法。
+- 【MUST NOT】在组件内直接调用平台原生 API。
+- 【MUST】API 封装变更需同步依赖方、文档、测试。
+
+## 5. 其他规范
+- 【MUST】跨平台兼容性处理需有注释说明。
+- 【MUST】新增平台适配时优先扩展 env.ts 和 utils 层，避免全局搜索替换。
+- 【MUST】变更需同步更新依赖、文档、测试。
+
+## 6. 适用范围与边界说明
+- 【MUST】本规范适用于所有跨平台适配方式、平台判断、条件编译、样式适配、API 封装。
+- 【MUST NOT】不得修改未被本规范明确提及的跨平台适配方式、平台判断、条件编译、样式适配、API 封装。
+- 如遇特殊业务需求，可在 README.md 说明例外并团队评审。
+
+## 7. 正反例
+### 正例
+```ts
+import { isH5, isWeChat } from '@/utils/env';
+if (isH5) { /* ... */ }
+```
+```js
+// #ifdef H5
+console.log('仅H5可见');
+// #endif
+```
+### 反例
+```ts
+if (platform === 'h5') { /* ... */ }
+```

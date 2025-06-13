@@ -1,0 +1,62 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Vue3 + UniApp 可复用代码模板（chat-uikit-uniapp 范例）
+
+> 适用于所有基于 Vue3 + UniApp 的项目，参考 chat-uikit-uniapp（Vue3 版）源码实践。
+
+## 1. 标准组件模板
+```vue
+<template>
+  <div class="my-component">{{ title }}</div>
+</template>
+<script setup lang="ts">
+interface Props {
+  title: string;
+}
+const props = defineProps<Props>();
+</script>
+<style scoped lang="scss">
+.my-component {
+  color: $primary-color;
+}
+</style>
+```
+
+## 2. 工具函数模板
+```ts
+/**
+ * 格式化时间
+ * @param date 时间字符串或时间戳
+ * @returns 格式化后的字符串
+ */
+export function formatDate(date: string | number): string {
+  // ...实现
+  return '';
+}
+```
+
+## 3. 配置文件模板
+### interface.ts
+```ts
+export interface UserProfile {
+  id: string;
+  name: string;
+}
+```
+
+### env.ts
+```ts
+export const isH5 = process.env.UNI_PLATFORM === 'h5';
+export const isWeChat = process.env.UNI_PLATFORM === 'mp-weixin';
+```
+
+### i18n 资源
+```json
+{
+  "chat.send": "发送",
+  "chat.cancel": "取消"
+}
+```

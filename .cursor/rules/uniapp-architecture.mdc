@@ -1,0 +1,47 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Vue3 + UniApp 架构设计核心规则（chat-uikit-uniapp 范例）
+
+> 本规则基于 chat-uikit-uniapp（Vue3 版）源码结构，提炼适用于中大型 Vue3 + UniApp 项目的通用架构设计要点。
+
+## 1. 架构分层
+- 视图层（components/）：UI 展现与交互，按业务模块组织。
+- 服务层（server.ts、utils/）：数据请求、SDK 封装、业务逻辑。
+- 类型与常量（interface.ts、constant.ts）：统一管理类型、常量、枚举。
+- 样式层（style/）：每个模块/组件独立样式，支持主题和多端。
+
+## 2. 模块拆分
+- 每个主业务模块为一级目录，内部细分为子组件（如 message-list、header 等），每个组件职责单一。
+- 公共基础组件集中于 components/common/，业务无关、可复用。
+
+## 3. 组件粒度
+- 单一功能/视图块即为一个组件，避免"大而全"组件。
+- 组件通信优先用 props/emits，跨层用 uni.$emit 或全局 store。
+
+## 4. 数据流
+- 全局状态由 store 管理，组件通过 watch 订阅。
+- 组件内部响应式用 ref/computed，保持局部状态独立。
+
+## 5. 平台适配
+- 统一用 utils/env.ts 进行平台判断，禁止硬编码。
+- 条件编译仅用于必要分支，样式用 rpx 单位，API 封装在 utils 层。
+
+## 目录结构范例
+```
+TUIKit/
+  components/
+    业务模块A/
+      index.vue
+      子组件1/
+      style/
+      utils/
+    common/
+      Avatar/
+      Dialog/
+  utils/
+  interface.ts
+  constant.ts
+```

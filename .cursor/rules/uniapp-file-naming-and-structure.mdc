@@ -1,0 +1,79 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Vue3 + UniApp 文件命名与目录结构严谨规范（chat-uikit-uniapp 范例）
+
+> 适用于所有基于 Vue3 + UniApp 的项目，参考 chat-uikit-uniapp（Vue3 版）源码最佳实践。所有规范均分为【强制（MUST）】【推荐（SHOULD）】【禁止（MUST NOT）】，并补充边界、变更同步要求。
+
+---
+
+## 规则适用强制边界与未覆盖场景处理
+- 【MUST】仅允许对本规范明确覆盖的目录结构、文件命名、组织方式进行修改，且必须严格遵循对应条款。
+- 【MUST NOT】不得修改未被本规范明确提及的目录结构、命名方式、文件组织等，除非先补充规则并团队评审通过。
+- 【MUST】变更发起人需在 PR/commit 明确标注所依据的规则条款编号或链接。
+- 【MUST】reviewer 必须逐条核查变更是否有规则依据，无依据则驳回并要求补充规则。
+- 【MUST】所有规则变更、例外、评审意见需归档，便于历史回溯和责任追踪。
+- 【SHOULD】团队定期回顾规则，版本管理，确保与实际开发同步。
+- 【正例】目录结构调整、文件重命名，PR 说明"依据2.目录划分原则"，同步更新依赖、文档。
+- 【反例】直接新增/重命名目录或文件，无规则依据，PR被驳回。
+
+---
+
+## 1. 目录划分原则
+- 【MUST】每个业务领域/功能为一级目录（如 TUIChat、TUIConversation），目录下再细分子模块。
+- 【MUST】通用基础组件、工具、样式、类型等单独归类，不与业务模块混杂。
+- 【MUST】每个业务模块下建议包含：index.vue、index.ts、server.ts、style/、utils/ 等。
+- 【SHOULD】目录结构应便于扩展和团队协作。
+
+---
+
+## 2. 业务与通用模块分离
+- 【MUST】业务相关目录如 components/TUIChat、components/TUIGroup。
+- 【MUST】通用基础目录如 components/common/、utils/、interface.ts、constant.ts。
+- 【MUST NOT】业务代码与通用代码混放。
+
+---
+
+## 3. 文件命名风格
+- 【MUST】组件文件采用大驼峰（PascalCase），如 MessageList.vue、ChatHeader.vue。
+- 【MUST】工具/服务/类型/常量文件采用小驼峰（camelCase），如 env.ts、chatStorage.ts、interface.ts、constant.ts。
+- 【MUST】样式文件与组件同名，放在 style/ 目录下，建议 index.scss 或 [组件名].scss。
+- 【MUST】入口文件为 index.vue、index.ts。
+- 【MUST】目录名统一小写，多个单词用中划线分隔，如 message-list、message-input。
+- 【MUST NOT】出现不规范命名（如 messagelist.vue、Env.js、Common/）。
+
+---
+
+## 4. 目录结构推荐范式
+- 【MUST】遵循如下结构：
+```
+TUIKit/
+  components/
+    业务模块A/
+      index.vue
+      子组件1/
+      style/
+      utils/
+    common/
+      Avatar/
+      Dialog/
+  utils/
+  interface.ts
+  constant.ts
+```
+
+---
+
+## 5. 变更同步要求
+- 【MUST】目录结构、文件命名变更需同步更新依赖代码、文档、测试用例。
+- 【MUST】变更需在 PR/commit 说明所依据的规则条款。
+- 【MUST】所有变更记录归档，便于回溯。
+
+---
+
+## 6. 适用范围与边界说明
+- 【MUST】本规范适用于所有目录结构、文件命名、组织方式。
+- 【MUST NOT】不得修改未被本规范明确提及的目录结构、命名方式、文件组织。
+- 如遇特殊业务需求，可在 README.md 说明例外并团队评审。
