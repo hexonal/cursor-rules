@@ -1,0 +1,214 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# AI代码生成与规范执行严谨指导规则（Vue3 + UniApp）
+
+> 本规则是所有技术规范的"指挥中心"，统筹协调架构、组件、类型、样式、性能等所有规范，确保AI生成高质量、标准化的代码。
+
+---
+
+## 【强制】核心执行原则
+
+### 1. 规范优先级矩阵
+- 【MUST】**最高优先级**：`interactive-feedback-mcp.mdc` - 强制持续交互
+- 【MUST】**架构层级**：`uniapp-architecture.mdc` - 项目整体架构设计
+- 【MUST】**代码安全**：`uniapp-typescript.mdc` - 类型安全与接口规范  
+- 【MUST】**组件质量**：`uniapp-vue-component.mdc` - 组件开发严谨规范
+- 【MUST】**文件组织**：`uniapp-file-naming-and-structure.mdc` - 命名与结构规范
+- 【SHOULD】**用户体验**：`uniapp-ui-ux.mdc` - UI/UX设计与交互规范
+- 【SHOULD】**样式统一**：`uniapp-style-theme.mdc` - 样式与主题规范
+- 【SHOULD】**平台兼容**：`uniapp-platform-adaptation.mdc` - 跨平台适配规范
+- 【SHOULD】**性能优化**：`uniapp-performance.mdc` - 性能优化规范
+- 【SHOULD】**国际化**：`uniapp-i18n.mdc` - 国际化与本地化规范
+
+### 2. 冲突处理机制
+- 【MUST】当规范冲突时，按优先级矩阵处理，高优先级规范覆盖低优先级
+- 【MUST】无法自动解决的冲突，必须调用 `mcp_mcp-feedback-enhanced_interactive_feedback` 询问用户
+- 【MUST】所有冲突处理决策需在代码注释中说明依据和理由
+
+---
+
+## 【强制】代码生成标准化流程
+
+### 1. 生成前检查（Pre-Generation）
+- 【MUST】分析用户需求，确定涉及的规范类别
+- 【MUST】检查现有代码结构，确保新代码与项目架构一致
+- 【MUST】确认文件命名和目录结构符合 `uniapp-file-naming-and-structure.mdc`
+- 【MUST】调用 `mcp_mcp-feedback-enhanced_interactive_feedback` 确认理解正确
+
+### 2. 代码编写标准（Generation Standards）
+- 【MUST】**TypeScript优先**：所有代码必须严格遵循 `uniapp-typescript.mdc` 规范
+  - 接口定义完整，类型声明明确
+  - 禁止使用 `any`，优先使用具体类型
+  - 所有函数参数和返回值必须有类型声明
+  - JSDoc注释完整，包含参数说明和使用示例
+
+- 【MUST】**组件规范执行**：严格按照 `uniapp-vue-component.mdc` 标准
+  - `<script setup lang="ts">` 语法
+  - `defineProps`、`defineEmits`、`defineSlots`、`defineExpose` 完整声明
+  - 所有props、emits、slots必须有JSDoc注释
+  - 组件样式必须scoped，采用BEM命名
+  - 生命周期副作用必须在onUnmounted清理
+
+- 【MUST】**架构一致性**：遵循 `uniapp-architecture.mdc` 分层原则
+  - 视图层、服务层、类型层清晰分离
+  - 组件职责单一，避免"大而全"组件
+  - 数据流清晰，优先使用props/emits通信
+
+- 【MUST】**样式规范化**：按照 `uniapp-style-theme.mdc` 要求
+  - 统一使用rpx单位，支持多端适配
+  - SCSS变量管理颜色、间距、字号
+  - 支持主题切换，禁止硬编码样式值
+  - flex布局优先，避免固定定位
+
+- 【SHOULD】**性能考虑**：集成 `uniapp-performance.mdc` 优化点
+  - 大列表使用虚拟列表
+  - 组件懒加载和按需引入
+  - 图片资源压缩和懒加载
+  - 避免不必要的响应式数据
+
+### 3. 代码完整性要求
+- 【MUST】**文件完整性**：
+  - 组件目录包含：index.vue、index.ts、style/、utils/、README.md
+  - README.md包含props、emits、slots、使用示例
+  - 类型定义文件与实现同步
+
+- 【MUST】**代码注释**：
+  - 关键逻辑有中文注释说明
+  - 复杂算法有实现思路注释
+  - 性能优化点有优化说明注释
+  - 平台适配代码有适配原因注释
+
+- 【MUST】**依赖管理**：
+  - import语句按照类型、第三方库、项目内部模块分组
+  - 避免循环依赖，清晰的依赖关系
+  - 只引入实际使用的模块，避免全量引入
+
+### 4. 生成后验证（Post-Generation）
+- 【MUST】自动检查生成代码是否符合所有相关规范
+- 【MUST】验证TypeScript类型正确性，无类型错误
+- 【MUST】确认组件props/emits/slots声明完整
+- 【MUST】检查样式是否使用SCSS变量，是否支持主题
+- 【MUST】验证文件命名和目录结构正确性
+- 【MUST】调用 `mcp_mcp-feedback-enhanced_interactive_feedback` 让用户确认结果
+
+---
+
+## 【强制】代码质量检查清单
+
+### TypeScript质量检查
+- [ ] 所有接口和类型定义完整
+- [ ] 无any类型使用
+- [ ] 函数参数和返回值类型明确
+- [ ] JSDoc注释完整
+
+### Vue组件质量检查  
+- [ ] defineProps/defineEmits/defineSlots声明完整
+- [ ] 所有props有默认值处理
+- [ ] 事件类型声明正确
+- [ ] 样式scoped且使用BEM命名
+- [ ] 生命周期副作用清理完整
+
+### 架构质量检查
+- [ ] 组件职责单一
+- [ ] 数据流清晰
+- [ ] 文件组织符合架构规范
+- [ ] 模块依赖关系清晰
+
+### 样式质量检查
+- [ ] 使用rpx单位
+- [ ] SCSS变量管理
+- [ ] 支持主题切换
+- [ ] flex布局实现
+
+### 性能质量检查
+- [ ] 大数据渲染优化
+- [ ] 组件懒加载
+- [ ] 资源按需引入
+- [ ] 响应式数据合理使用
+
+---
+
+## 【强制】与Interactive Feedback的协调
+
+### 1. 强制交互节点
+- 【MUST】代码生成前：确认需求理解正确
+- 【MUST】规范冲突时：询问用户处理方式
+- 【MUST】代码生成后：让用户确认结果质量
+- 【MUST】发现问题时：及时反馈并寻求指导
+- 【MUST】任务完成后：等待用户反馈，不得自动结束
+
+### 2. 交互质量标准
+- 【MUST】每次交互都要说明当前进度和下一步计划
+- 【MUST】遇到规范冲突时详细说明冲突内容和建议方案
+- 【MUST】代码生成完成后提供质量检查报告
+- 【MUST】问题反馈时提供具体的解决建议
+
+---
+
+## 【强制】特殊场景处理
+
+### 1. 规范冲突处理
+```
+当TypeScript类型安全与性能优化冲突时：
+优先级：TypeScript > 性能优化
+处理：保证类型安全前提下寻找性能优化方案
+```
+
+### 2. 紧急修复场景
+- 【MUST】紧急修复需在代码注释中说明偏离规范的原因
+- 【MUST】修复后必须补充规范化重构计划
+- 【MUST】通过interactive feedback通知用户偏离情况
+
+### 3. 渐进式优化
+- 【SHOULD】现有代码逐步规范化，避免大范围重构
+- 【SHOULD】新增代码严格按规范执行
+- 【SHOULD】定期review代码质量，持续改进
+
+---
+
+## 【限制】禁止行为
+
+### 1. 代码生成禁令
+- 【MUST NOT】生成不符合TypeScript规范的代码
+- 【MUST NOT】生成未经用户确认的大量代码
+- 【MUST NOT】忽略组件开发规范的任何条款
+- 【MUST NOT】生成硬编码样式值的代码
+- 【MUST NOT】生成未考虑性能优化的代码
+
+### 2. 交互禁令  
+- 【MUST NOT】跳过 `mcp_mcp-feedback-enhanced_interactive_feedback` 调用
+- 【MUST NOT】在用户未确认前自动结束任务
+- 【MUST NOT】忽略用户的规范偏好设置
+- 【MUST NOT】生成代码后不进行质量检查
+
+### 3. 规范处理禁令
+- 【MUST NOT】随意降低规范要求
+- 【MUST NOT】忽略规范冲突不处理
+- 【MUST NOT】在无规范依据的情况下修改代码结构
+
+---
+
+## 【增强】持续改进机制
+
+### 1. 代码质量监控
+- 定期检查生成代码的规范符合度
+- 收集用户对代码质量的反馈
+- 优化代码生成算法和检查机制
+
+### 2. 规范更新同步
+- 当技术规范更新时，立即同步代码生成标准
+- 验证新规范与现有规范的兼容性
+- 更新质量检查清单
+
+### 3. 最佳实践积累
+- 记录常见问题的最佳解决方案
+- 积累高质量代码模板
+- 形成规范执行的经验库
+
+---
+
+## 【规则优先级】
+本规则具有**最高执行优先级**，与 `interactive-feedback-mcp.mdc` 并列，统筹协调所有其他技术规范的执行。任何与技术规范执行相关的行为都必须按照本规则执行。
