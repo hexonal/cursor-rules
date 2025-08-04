@@ -3,45 +3,294 @@ description: "Go 代码注释规范 (v4.2)，旨在提供一套完整的、无�
 globs: 
 alwaysApply: true
 ---
-# Go 代码注释规范 (v4.2)
+# Go 代码注释规范 (v4.3)
 
 > **最高优先级**: 本规范所有条款均受 [全局元规则](mdc:_meta-rules.mdc) 约束。
 
 ## 1. 注释核心原则
 
-*   **解释“为什么”，而不是“怎么做”**: 注释的核心价值在于解释代码背后的**意图**、**业务逻辑**、**设计决策**和**权衡**。
+*   **解释"为什么"，而不是"怎么做"**: 注释的核心价值在于解释代码背后的**意图**、**业务逻辑**、**设计决策**和**权衡**。
 *   **优先代码自解释**: 在添加注释前，**必须**审视代码是否可以通过重构来使其更清晰。
 *   **语言**: 推荐使用中文进行项目内部注释。对外开源或需要跨国协作的库，**必须**使用英文注释。
 
-## 2. 文档注释 (Godoc)
+## 2. 文件头注释 (File Header Comments)
+
+### 2.1. 类文件头注释
+
+对于定义主要类型（结构体、接口）的 Go 源代码文件，**必须**在文件开头包含作者和创建时间信息。
+
+**格式要求**:
+*   **必须**位于文件的最开头，在 `package` 声明之前
+*   **必须**包含 `@author` 和 `@date` 标记
+*   日期格式**必须**使用 `yyyy-MM-dd` 格式
+*   各行**必须**以 `//` 开头，保持统一格式
+
+**类文件头注释模板**:
+```go
+// @author 张三
+// @date 2025-08-04
+
+package service
+```
+
+**完整示例**:
+```go
+// @author 李四
+// @date 2025-08-04
+
+// Package user 提供了用户管理相关的核心功能。
+//
+// 该包包含用户信息的 CRUD 操作、身份验证和权限管理等功能。
+// 主要类型包括 User、UserService 和 UserRepository。
+package user
+
+// User 表示系统中的用户实体。
+type User struct {
+    ID       int64  `json:"id"`
+    Username string `json:"username"`
+    Email    string `json:"email"`
+}
+
+// UserService 提供用户相关的业务逻辑处理。
+type UserService struct {
+    repo UserRepository
+}
+```
+
+**注意事项**:
+*   仅在包含主要类型定义的文件中添加 `@author` 和 `@date`
+*   工具类、常量定义等辅助文件不需要作者和时间信息
+*   方法和函数的注释中**严禁**包含作者和时间信息
+
+### 2.2. 包级别文档注释
+
+包级别的文档注释**必须**遵循以下规范：
+
+**位置要求**:
+*   **必须**直接位于 `package` 声明的上方
+*   与文件头注释之间**必须**有一个空行分隔
+
+**内容要求**:
+*   第一行**必须**以 `// Package [包名]` 开头
+*   **必须**简洁描述包的核心功能和用途
+*   对于复杂包，**必须**提供使用示例
+*   **必须**说明包的主要接口或类型
+
+**示例**:
+```go
+// @author 王五
+// @date 2025-08-04
+
+// Package format 提供了文件命名格式化的功能。
+//
+// 该包支持通过 go 和 zero 格式化字符来定义格式样式。例如，
+// 可以定义蛇形格式为 go_zero，驼峰格式为 goZero。
+//
+// 基本用法：
+//
+//	result, err := FileNamingFormat("go_zero", "welcomeToGoZero")
+//	if err != nil {
+//		// 处理错误
+//	}
+//	// result 为 "welcome_to_go_zero"
+//
+// 注意：格式化基于蛇形或驼峰字符串进行。
+package format
+```
+
+## 3. 文档注释 (Godoc)
 
 所有导出的标识符都**必须**有 `godoc` 注释。
-*(... 此处省略与 v4.1 相同的函数、类型等 godoc 规范，以突出新增内容 ...)*
+
+### 3.1. 函数和方法注释规范
+
+**基本要求**:
+*   **必须**以函数/方法名开头
+*   **必须**使用第三人称描述（如"返回"而不是"返回给你"）
+*   **严禁**使用无意义的描述（如 `// GetUser 获取用户`）
+
+**简单方法注释**:
+```go
+// New 创建一个新的 etcd v3 客户端实例。
+func New(cfg Config) (*Client, error) {
+    // ...
+}
+
+// Close 关闭客户端连接并释放相关资源。
+func (c *Client) Close() error {
+    // ...
+}
+
+// Put 将键值对存储到 etcd 中。
+// 键和值都可以是纯字节数组，字符串是字节数组的不可变表示。
+func Put(ctx context.Context, key, val string, opts ...OpOption) (*PutResponse, error) {
+    // ...
+}
+```
+
+**复杂方法详细注释**:
+```go
+// Get 从 etcd 中检索键值对。
+//
+// 默认情况下，Get 返回指定键的值（如果存在）。
+// 
+// 支持的选项：
+//   - WithRange(end): 返回 [key, end) 范围内的键
+//   - WithFromKey(): 返回大于等于 key 的所有键
+//   - WithRev(rev): 在指定版本检索键值对，如果版本已压缩则返回 ErrCompacted
+//   - WithLimit(limit): 限制返回的键值对数量
+//   - WithSort(): 对键进行排序
+//
+// 返回值包含匹配的键值对和操作的修订版本信息。
+func Get(ctx context.Context, key string, opts ...OpOption) (*GetResponse, error) {
+    // ...
+}
+
+// FileNamingFormat 格式化文件名称。
+//
+// 通过 go 和 zero 格式化字符定义格式样式。例如，可以定义蛇形格式为 go_zero，
+// 驼峰格式为 goZero。甚至可以指定分隔符，如 go#zero。理论上可以使用任何组合，
+// 但前提是必须符合各操作系统文件名的命名约定。
+//
+// 参数：
+//   - format: 格式模板，必须包含 "go" 和 "zero" 标记
+//   - content: 要格式化的内容字符串
+//
+// 返回格式化后的字符串。如果 format 参数无效，返回 ErrNamingFormat 错误。
+//
+// 注意：格式化基于蛇形或驼峰字符串进行。
+func FileNamingFormat(format, content string) (string, error) {
+    // ...
+}
+```
+
+### 3.2. 接口注释规范
+
+接口注释**必须**清晰说明接口的契约和使用场景：
+
+```go
+// KV 定义了 etcd 键值存储的核心操作接口。
+//
+// 该接口提供了对 etcd 键值存储的基本 CRUD 操作，包括存储、检索、
+// 删除和事务处理。所有操作都支持上下文取消和超时控制。
+//
+// 实现该接口的类型必须是线程安全的，支持并发调用。
+type KV interface {
+    // Put 将键值对存储到 etcd 中。
+    // 键和值都可以是纯字节数组，字符串是字节数组的不可变表示。
+    Put(ctx context.Context, key, val string, opts ...OpOption) (*PutResponse, error)
+    
+    // Get 检索指定的键值对。
+    // 支持范围查询、版本查询和排序等高级选项。
+    Get(ctx context.Context, key string, opts ...OpOption) (*GetResponse, error)
+    
+    // Delete 删除指定的键，或使用 WithRange(end) 删除范围 [key, end)。
+    Delete(ctx context.Context, key string, opts ...OpOption) (*DeleteResponse, error)
+    
+    // Txn 创建一个事务，支持原子性的多操作执行。
+    Txn(ctx context.Context) Txn
+}
+```
+
+### 3.3. 类型注释规范
+
+**结构体注释**:
+```go
+// Client 提供并管理一个 etcd v3 客户端会话。
+//
+// Client 封装了与 etcd 集群的连接，提供了所有 etcd v3 API 的访问能力，
+// 包括键值存储、监视、租约和集群管理等功能。
+//
+// Client 是线程安全的，可以在多个 goroutine 中并发使用。
+// 使用完毕后必须调用 Close() 方法释放资源，否则会导致 goroutine 泄漏。
+//
+// 示例用法：
+//
+//	cli, err := clientv3.New(clientv3.Config{
+//		Endpoints: []string{"localhost:2379"},
+//		DialTimeout: 5 * time.Second,
+//	})
+//	if err != nil {
+//		// 处理错误
+//	}
+//	defer cli.Close()
+type Client struct {
+    // Cluster 提供集群管理功能
+    Cluster
+    // KV 提供键值存储操作
+    KV
+    // Lease 提供租约管理功能
+    Lease
+    // ... 其他字段
+}
+
+// Config 包含创建 etcd 客户端所需的配置参数。
+type Config struct {
+    // Endpoints 是 etcd 集群端点列表。不能为空。
+    Endpoints []string `json:"endpoints"`
+    
+    // DialTimeout 是连接超时时间。零值表示不设置超时。
+    DialTimeout time.Duration `json:"dial-timeout"`
+    
+    // Username 用于身份验证的用户名。可选。
+    Username string `json:"username"`
+    
+    // Password 用于身份验证的密码。可选。
+    Password string `json:"password"`
+}
+```
+
+**常量和变量注释**:
+```go
+// 错误定义
+var (
+    // ErrNoAvailableEndpoints 表示没有可用的 etcd 端点
+    ErrNoAvailableEndpoints = errors.New("etcdclient: no available endpoints")
+    
+    // ErrOldCluster 表示连接的是旧版本的 etcd 集群
+    ErrOldCluster = errors.New("etcdclient: old cluster version")
+)
+
+// 默认配置常量
+const (
+    // DefaultDialTimeout 是默认的连接超时时间
+    DefaultDialTimeout = 5 * time.Second
+    
+    // DefaultRequestTimeout 是默认的请求超时时间
+    DefaultRequestTimeout = 10 * time.Second
+)
+```
 
 ### (黄金标准示例)
 ```go
 // ProcessOrders 查询指定客户的所有待处理订单，进行验证，然后发送至履约服务。
 //
-// ... (详尽的 godoc 注释)
-func ProcessOrders(ctx context.Context, customerID int64, opts *Options) (processedOrderIDs []int64, err error) { ... }
-```
-
-### (类型示例)
-```go
-// Config 保存了服务器的所有配置项。
-type Config struct {
-    // Addr 是服务器监听的网络地址。此字段不能为空。
-    Addr string `json:"addr"`
-    // MaxConnections 是最大并发连接数。如果为零，将使用默认值 1024。
-    MaxConnections int `json:"max_connections,omitempty"`
+// 该方法首先从数据库中检索指定客户的所有状态为"待处理"的订单，
+// 然后对每个订单进行业务规则验证（库存检查、支付状态确认等），
+// 最后将验证通过的订单批量发送到履约服务进行处理。
+//
+// 参数：
+//   - ctx: 用于控制请求超时和取消的上下文
+//   - customerID: 客户唯一标识符，必须大于 0
+//   - opts: 可选的处理选项，可为 nil 使用默认设置
+//
+// 返回成功处理的订单 ID 列表。如果没有符合条件的订单，返回空切片。
+// 发生错误时返回 nil 和具体的错误信息。
+//
+// 常见错误：
+//   - ErrInvalidCustomerID: customerID 无效或不存在
+//   - ErrOrderValidationFailed: 订单验证失败
+//   - context.DeadlineExceeded: 操作超时
+func ProcessOrders(ctx context.Context, customerID int64, opts *Options) (processedOrderIDs []int64, err error) { 
+    // ... 
 }
 ```
 
-## 3. 实现注释 (Implementation Comments)
+## 4. 实现注释 (Implementation Comments)
 
 实现注释（`//`）用于解释函数或方法**内部**的非导出代码或复杂逻辑块。
 
-### 3.1. 强制添加注释的场景清单
+### 4.1. 强制添加注释的场景清单
 
 在以下场景中，**必须**添加实现注释：
 
@@ -49,11 +298,11 @@ type Config struct {
 2.  **算法选择**: 解释为什么选择特定的算法或数据结构。
 3.  **业务规则**: 解释代码对应的具体业务规则或计算公式。
 4.  **外部依赖**: 解释对某个外部系统行为的假设。
-5.  **性能优化**: 解释一段看似“奇怪”的代码是为了特定的性能优化。
+5.  **性能优化**: 解释一段看似"奇怪"的代码是为了特定的性能优化。
 6.  **安全风险**: 对一段可能存在并发风险或安全漏洞的代码进行警示。
-7.  **魔法值**: **必须**为代码中出现的、未定义为常量的“魔法值”提供注释，解释其来源和意义。
+7.  **魔法值**: **必须**为代码中出现的、未定义为常量的"魔法值"提供注释，解释其来源和意义。
 
-### 3.2. 格式与示例
+### 4.2. 格式与示例
 
 *   **格式**: 注释应紧邻其描述的代码块上方，并保持相同的缩进级别。
 *   **禁止**: **严禁**编写复述代码字面意思的无效注释（如 `// i 加 1`）。
@@ -94,3 +343,95 @@ func (s *Server) processRequest(req *Request) error {
     return nil
 }
 ```
+
+## 5. 特殊注释标记
+
+### 5.1. 废弃标记
+
+对于需要废弃的代码，**必须**使用标准的废弃注释格式：
+
+```go
+// HandleRequest 处理 HTTP 请求。
+//
+// Deprecated: 使用 HandleRequestV2 替代。该方法将在 v2.0 版本中移除。
+func HandleRequest(w http.ResponseWriter, r *http.Request) {
+    // ...
+}
+
+// OldConfig 旧版本的配置结构。
+//
+// Deprecated: 使用 Config 替代。
+type OldConfig struct {
+    // ...
+}
+```
+
+### 5.2. TODO 和 FIXME 标记
+
+用于标记需要后续处理的代码：
+
+```go
+func processData(data []byte) error {
+    // TODO(username): 实现数据压缩功能以减少内存使用
+    
+    // FIXME: 这里的错误处理不够完善，需要区分不同类型的错误
+    if err := validate(data); err != nil {
+        return err
+    }
+    
+    // HACK: 临时解决方案，等待上游库修复后移除
+    time.Sleep(10 * time.Millisecond)
+    
+    return nil
+}
+```
+
+### 5.3. 内部 API 标记
+
+对于仅供内部使用的导出标识符：
+
+```go
+// InternalAPI 提供内部服务间调用的接口。
+//
+// 警告：这是内部 API，不保证兼容性。外部代码不应依赖此接口。
+type InternalAPI interface {
+    // ...
+}
+```
+
+## 6. 注释质量检查
+
+### 6.1. 自动化检查
+
+**必须**在 CI/CD 流程中加入以下检查：
+
+1. 使用 `golint` 或 `revive` 检查缺失的文档注释
+2. 使用 `godoc` 验证注释格式的正确性
+3. 自定义脚本检查版权声明的一致性
+
+### 6.2. 人工审查要点
+
+在代码审查时，**必须**检查：
+
+1. 注释是否解释了"为什么"而不是"怎么做"
+2. 复杂逻辑是否有足够的实现注释
+3. 导出的标识符是否都有恰当的文档注释
+4. 注释内容是否与代码实际行为一致
+5. 是否存在过时或误导性的注释
+
+## 7. 注释维护
+
+### 7.1. 与代码同步更新
+
+**强制要求**：
+*   代码修改时，**必须**同步更新相关注释
+*   重构代码时，**必须**审查和更新所有相关注释
+*   删除代码时，**必须**删除对应的注释
+
+### 7.2. 注释重构
+
+定期审查和重构注释：
+*   移除过时或重复的注释
+*   合并相关的注释块
+*   改进不清晰的注释表述
+*   添加缺失的关键注释
