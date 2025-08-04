@@ -1,47 +1,146 @@
 ---
-description: 
+description: "Go 测试规范 (v3.0)，融合了 etcd 和 go-zero 的测试最佳实践。"
 globs: 
-alwaysApply: false
+alwaysApply: true
 ---
-# Go 测试实践指南 (v1.0)
+# Go 测试规范 (v3.0)
 
-本规则旨在指导 Go 项目的测试编写，确保代码的质量、可靠性和可维护性。
+> **注意**: 本规范之上存在一份 [全局元规则](mdc:_meta-rules.mdc)，其具有最高解释权。
 
-## 测试
+本规范旨在提供一套完整的、无二义性的 Go 应用测试标准。
 
-*   **单元测试**: 为所有可导出的函数、方法以及关键的内部逻辑编写单元测试。
-    *   测试文件命名为 `*_test.go`，与被测试的代码文件放在同一个包下 (项目结构中的测试组织参见 [Go 包设计与项目结构](mdc:go-packages.mdc#test))。
-    *   测试函数命名为 `TestXxx` (Xxx 不以小写字母开头)，并接受 `*testing.T` 参数。(可配合 [`-race` 标志](mdc:go-security.mdc#3-并发安全-concurrency-safety) 进行数据竞争检测)。
-    *   **AI 指导**: 创建新函数或修改现有函数时，提醒用户编写或更新相应的单元测试。
-*   **覆盖主要场景**: 测试应覆盖正常情况、边界情况和错误情况。
-    *   使用 `t.Run` 创建子测试，以便更好地组织和报告多个测试用例。
-*   **表驱动测试 (Table-Driven Tests)**: 对于需要测试多种输入和输出组合的函数，**强烈推荐**使用表驱动测试。这使得测试用例易于阅读、添加和维护。
-    *   '''go
-        func TestMyFunction(t *testing.T) {
-            cases := []struct {
-                name     string
-                input    string
-                want     string
-                wantErr  bool
-            }{
-                {"empty input", "", "", false},
-                // ... more cases
-            }
-            for _, tc := range cases {
-                t.Run(tc.name, func(t *testing.T) {
-                    got, err := MyFunction(tc.input)
-                    if (err != nil) != tc.wantErr {
-                        t.Errorf("MyFunction() error = %v, wantErr %v", err, tc.wantErr)
-                        return
-                    }
-                    if got != tc.want {
-                        t.Errorf("MyFunction() = %v, want %v", got, tc.want)
-                    }
-                })
-            }
+## 1. 测试分类与要求
+
+*   **单元测试**:
+    *   **强制**: 所有导出的函数、方法和核心内部逻辑**必须**有单元测试。
+    *   **隔离**: 单元测试**严禁**依赖任何外部服务，**必须**使用接口和测试替身进行模拟。
+*   **集成测试**:
+    *   **强制**: 涉及多个内部模块交互的关键业务流程，以及需要与真实外部依赖（如数据库）交互的代码，**必须**编写集成测试。
+    *   **隔离**: 集成测试**必须**使用构建标签（`//go:build integration`）与单元测试隔离。
+
+## 2. 测试编写规范
+
+*   **表驱动测试**: 对于需要验证多种输入输出组合的函数，**必须**使用表驱动测试。
+*   **子测试**: **必须**使用 `t.Run` 来组织每个独立的测试用例。
+*   **覆盖**: 测试用例**必须**覆盖正常、边界和所有错误分支。
+*   **并发测试**: 对于声明为"并发安全"的代码，**必须**编写并发测试，并**必须**在 `go test` 中开启 `-race` 标志。
+*   **覆盖率**:
+    *   **必须**将 `go test -cover` 集成到 CI 流程中。
+    *   新代码的行覆盖率**必须**达到团队约定的最低标准（如 80%），未达标则**必须**阻塞合并。
+    *   **严禁**为了提高覆盖率而编写没有实际断言的无效测试。
+
+## 3. Benchmark 与 Example 测试
+
+*   **Benchmark**: 对于[性能敏感的代码](mdc:go-performance.mdc)，**必须**编写 Benchmark 测试。
+*   **Example**: 对于公开的、用法复杂的 API，**推荐**编写 Example 测试作为活文档。
+
+## 4. 测试模式
+
+### 4.1. 表驱动测试执行器
+
+*   **强制**: 对于有多个测试用例的场景，**必须**使用表驱动测试。
+*   **进阶**: 可以封装通用的测试执行器，参考 go-zero 的实现：
+    ```go
+    type Data[T, Y any] struct {
+        Name  string
+        Input T
+        Want  Y
+        E     error
+    }
+    
+    type Executor[T, Y any] struct {
+        list    []Data[T, Y]
+        equalFn assertFn[Y]
+    }
+    
+    func (e *Executor[T, Y]) Run(t *testing.T, do func(T) Y) {
+        for _, v := range e.list {
+            t.Run(v.Name, func(t *testing.T) {
+                got := do(v.Input)
+                e.equalFn(t, v.Want, got)
+            })
         }
-        '''
-*   **测试覆盖率**: 关注测试覆盖率 (`go test -cover`) 作为代码质量的一个指标，但更重要的是测试用例的质量和有效性。高覆盖率并不总等同于高质量的测试。
-*   **避免外部依赖**: 单元测试应尽可能独立，避免依赖外部服务（如数据库、网络）。使用接口和测试替身 (test doubles) 如 mocks, stubs, fakes 来隔离被测单元。
-*   **Benchmark 测试**: 对于[性能敏感的代码](mdc:go-performance.mdc)，编写 Benchmark 测试 (`BenchmarkXxx` 函数，接受 `*testing.B` 参数) 来评估和追踪性能。
-*   **示例测试 (Example Tests)**: 使用示例测试 (`ExampleXxx` 函数) 来提供代码使用示例，并验证示例代码的正确性。这些示例会出现在 [GoDoc](mdc:go-comments.mdc#2-文档注释-godoc) 中。
+    }
+    ```
+
+### 4.2. Mock 数据库测试
+
+*   **原则**: 数据库相关的单元测试**必须**使用 Mock，不能依赖真实数据库。
+*   **实践**: 封装测试辅助函数：
+    ```go
+    func RunTest(t *testing.T, fn func(db *sql.DB, mock sqlmock.Sqlmock)) {
+        db, mock, err := sqlmock.New()
+        if err != nil {
+            t.Fatalf("创建 mock 数据库失败: %s", err)
+        }
+        defer db.Close()
+        
+        fn(db, mock)
+        
+        if err = mock.ExpectationsWereMet(); err != nil {
+            t.Errorf("存在未满足的期望: %s", err)
+        }
+    }
+    ```
+
+### 4.3. 测试隔离
+
+*   **强制**: 每个测试**必须**完全独立，不能依赖其他测试的执行结果或顺序。
+*   **清理**: 每个测试**必须**在 `defer` 中清理其创建的资源。
+
+### 4.4. 测试模板生成
+
+*   **推荐**: 使用工具生成测试模板，确保测试的完整性和一致性。
+*   **实践**: 参考 go-zero 的测试模板，包含：
+    - 成功场景
+    - 错误场景
+    - 边界条件
+    - Mock 设置
+    ```go
+    func Test{{.logic}}_{{.function}}(t *testing.T) {
+        tests := []struct {
+            name       string
+            ctx        context.Context
+            setupMocks func()
+            req        *{{.requestType}}
+            wantErr    bool
+            checkResp  func({{.responseType}})
+        }{
+            {
+                name: "错误响应",
+                ctx:  context.Background(),
+                setupMocks: func() {
+                    // 为此测试用例设置 mock 数据
+                },
+                req: &{{.requestType}}{
+                    // 初始化请求
+                },
+                wantErr: true,
+                checkResp: func(resp {{.responseType}}) {
+                    // 添加检查逻辑
+                },
+            },
+            {
+                name: "成功",
+                ctx:  context.Background(),
+                setupMocks: func() {
+                    // 为此测试用例设置 mock 数据
+                },
+                req: &{{.requestType}}{
+                    // 初始化请求
+                },
+                wantErr: false,
+                checkResp: func(resp {{.responseType}}) {
+                    // 添加检查逻辑
+                },
+            },
+        }
+        
+        for _, tt := range tests {
+            t.Run(tt.name, func(t *testing.T) {
+                tt.setupMocks()
+                // 执行测试逻辑
+            })
+        }
+    }
+    ```

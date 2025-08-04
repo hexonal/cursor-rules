@@ -1,18 +1,113 @@
 ---
-description: 
+description: "Go 错误处理规范 (v3.0)，融合了 etcd 和 go-zero 的错误处理最佳实践。"
 globs: 
-alwaysApply: false
+alwaysApply: true
 ---
-# Go 错误处理规范 (v1.0)
+# Go 错误处理规范 (v3.0)
 
-本规则定义了 Go 语言中错误处理的最佳实践，强调显式处理、清晰的错误信息和合理的错误类型选择。
+> **注意**: 本规范之上存在一份 [全局元规则](mdc:_meta-rules.mdc)，其具有最高解释权。
 
-## 错误处理
+本规范旨在提供一套完整的、无二义性的 Go 错误处理标准。
 
-错误处理的规范实践也与[API文档注释](mdc:go-comments.mdc#22-公共-api-注释-exported-identifiers)、[日志记录](mdc:go-config-logging.mdc#日志-logging)（特别是错误日志）以及[安全考量](mdc:go-security.mdc#4-错误处理与信息泄露)紧密相关。详细的包设计层面的错误处理原则参见 [Go 包设计规范](mdc:go-packages.mdc#4-错误处理-error-handling)。
+## 1. 核心原则
 
-*   **显式处理**: **必须**检查函数返回的 `error` 值。忽略错误是不允许的，除非有充分理由并在注释中说明。
-    *   **AI 操作**: 检查代码中是否存在 `_` 接收 `error` 的情况，或调用返回 `error` 的函数但未检查其返回值。
-*   **错误信息**: 错误信息应清晰、具体，包含足够上下文 (详细错误上下文也应记录在[错误日志](mdc:go-config-logging.mdc#日志-logging)中)。优先使用 `fmt.Errorf("... %w", err)` 来包装错误，保留原始错误信息。
-*   **哨兵错误 (Sentinel Errors)**: 谨慎使用导出的错误变量（如 `var ErrNotFound = errors.New("not found")`）。优先使用错误类型 (`struct` 实现 `error` 接口) 或 `errors.Is`/`errors.As` 进行判断，这提供了更好的扩展性和上下文。
-*   **Panic**: 仅用于表示程序不可恢复的错误（如启动时配置错误、不可修复的内部状态）。常规的、可预期的错误处理应使用 `error` 返回值 (库代码应[避免 panic](mdc:go-packages.mdc#4-错误处理-error-handling))。
+*   **禁止忽略错误**: **严禁**使用 `_` 丢弃函数返回的 `error` 值。
+*   **错误信息**: 错误信息字符串**必须**以小写字母开头，不以标点符号结尾。
+
+## 2. 错误的创建与传播
+
+*   **错误包装**: 在向上传递错误时，**必须**使用 `fmt.Errorf("...: %w", err)` 来添加上下文信息。**禁止**直接 `return err` 导致上下文丢失。
+
+## 3. 错误类型的选择
+
+*   **哨兵错误 (`var Err...`)**: **仅当**调用者需要通过 `errors.Is` 来改变其代码执行路径时使用。
+*   **自定义错误类型 (`struct`)**: **当**调用者需要从错误中提取更多上下文信息时，**必须**使用自定义错误类型，并通过 `errors.As` 进行检查。
+
+## 4. Panic 与 Recover
+
+*   **`panic` 的使用**: **严禁**在库代码中使用 `panic` 作为常规错误处理。`panic` **仅**用于表示程序中不可恢复的严重 bug。
+*   **`recover` 的使用**: `recover` **仅**应出现在 Goroutine 的顶层或 HTTP/gRPC 中间件中，用于防止整个进程崩溃，**严禁**在普通业务逻辑中使用。
+
+## 5. 错误码系统化
+
+*   **强制**: 对于对外提供服务的应用，**必须**建立统一的错误码系统。
+*   **映射**: 每个业务错误码**必须**有对应的 HTTP 状态码映射。
+*   **实践**: 参考 etcd 的错误码设计：
+    ```go
+    // 错误码定义
+    const (
+        EcodeKeyNotFound      = 100
+        EcodeTestFailed       = 101
+        EcodeNotFile          = 102
+        // ...
+    )
+    
+    // 错误信息映射
+    var errors = map[int]string{
+        EcodeKeyNotFound: "Key not found",
+        EcodeTestFailed:  "Compare failed",
+        // ...
+    }
+    
+    // HTTP 状态码映射
+    var errorStatus = map[int]int{
+        EcodeKeyNotFound: http.StatusNotFound,
+        EcodeTestFailed:  http.StatusPreconditionFailed,
+        // ...
+    }
+    ```
+
+## 6. 错误处理分层
+
+*   **原则**: 错误应该在不同层级有不同的处理方式。
+*   **传输层**: 负责错误的序列化和 HTTP 状态码映射。
+*   **业务层**: 负责错误的包装和上下文信息添加。
+*   **基础设施层**: 负责错误的记录和监控。
+    ```go
+    // 传输层错误处理
+    func writeError(lg *zap.Logger, w http.ResponseWriter, r *http.Request, err error) {
+        var v2Err *v2error.Error
+        var httpErr *httptypes.HTTPError
+        
+        switch {
+        case errors.As(err, &v2Err):
+            v2Err.WriteTo(w)
+        case errors.As(err, &httpErr):
+            httpErr.WriteTo(w)
+        default:
+            // 处理未知错误
+            herr := httptypes.NewHTTPError(http.StatusInternalServerError, "Internal Server Error")
+            herr.WriteTo(w)
+        }
+    }
+    ```
+
+## 7. Panic 恢复机制
+
+*   **强制**: 在以下位置**必须**设置 recover 机制：
+    1. HTTP/gRPC 中间件的最外层
+    2. 每个独立 Goroutine 的入口
+    3. 关键业务逻辑的边界
+*   **实践**: 参考 go-zero 的 recover 实现：
+    ```go
+    // HTTP 中间件中的 recover
+    func RecoverMiddleware(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            defer func() {
+                if p := recover(); p != nil {
+                    logx.ErrorStack(p)
+                    w.WriteHeader(http.StatusInternalServerError)
+                }
+            }()
+            next.ServeHTTP(w, r)
+        })
+    }
+    
+    // Goroutine 中的 recover
+    func SafeGo(fn func()) {
+        go func() {
+            defer rescue.Recover()
+            fn()
+        }()
+    }
+    ```

@@ -1,45 +1,63 @@
 ---
 description: 
 globs: 
-alwaysApply: false
+alwaysApply: true
 ---
-# Go 常见模式与惯用法 (v1.0)
+# Go 常见模式与惯用法 (v1.1)
 
 本规则收集了 Go 语言中推荐使用的常见设计模式和惯用法，以编写更地道、可维护的 Go 代码。
 
 ## 常见模式与惯用法
 
+*   **API-First 开发模式**:
+    *   **理念**: 将 API 契约（contract）作为开发流程的起点和唯一真实信源（Single Source of Truth）。先于一切业务逻辑代码，使用中立的接口定义语言（IDL）来精确描述 API。
+    *   **IDL 示例**: OpenAPI/Swagger (`.yaml`), gRPC (`.proto`), 或框架特定的格式（如 `go-zero` 的 `.api` 文件）。
+    *   **流程**:
+        1.  **定义**: 在 `/api` 目录中创建或修改 IDL 文件，定义数据结构、路由、方法、参数等。
+        2.  **生成**: 使用自动化工具（如 `protoc`, `goctl`, `oapi-codegen`）从此 IDL 文件生成：
+            *   **服务端骨架**: 路由注册、请求/响应结构体、参数校验逻辑。
+            *   **客户端代码**: 支持多种语言（Go, TypeScript, Java, Dart等）的类型安全 SDK。
+            *   **API 文档**: 自动生成可交互的 HTML 文档。
+        3.  **实现**: 开发者只需在生成的骨架中填充核心业务逻辑。
+    *   **优点**:
+        *   **协作效率**: 前后端团队可以基于 API 契约并行开发，无需等待对方完成。
+        *   **强一致性**: 代码、文档、客户端均源自同一定义，从根本上避免了不一致问题。
+        *   **自动化**: 大幅减少编写样板代码（boilerplate）的工作量。
+    *   **AI 指导**: 对于需要提供 HTTP/gRPC 接口的项目，强烈建议采用此模式。当用户手动编写路由、数据结构或客户端代码时，应提示其考虑使用 API-First 流程来自动化这些任务。
+
 *   **函数式选项 (Functional Options)**: 对于具有多个可选配置参数的构造函数或初始化函数，推荐使用 Functional Options 模式。它提供了清晰、可扩展的 API，易于添加新选项且保持向后兼容。
     *   **参考**: `go-patterns/idiom/functional-options.md`
     *   **AI 指导**: 当发现构造函数参数过多 (通常超过 3 个)、参数类型相同易混淆或需要灵活配置时，建议采用此模式。
+
 *   **构造函数**: 提供 `New...` 形式的函数来创建类型的实例，封装初始化逻辑，并返回具体类型或接口。
+
 *   **接口满足**: Go 中的接口满足是隐式的。类型无需显式声明 `implements` 关键字。只需实现接口所需的方法即可。
+
 *   **Defer**: 合理使用 `defer` 来管理资源释放，确保即使发生 panic 或提前返回，资源（如文件句柄、网络连接、锁）也能被正确关闭或释放。
     *   **注意**: 避免在循环中大量使用 `defer` 调用同一个函数，这可能导致资源消耗过多或延迟执行。考虑在循环内部显式释放资源，或使用内部函数配合 `defer` (注意 [defer 的性能开销](./go-performance.mdc#5-其他常见优化点))。
+
 *   **零值可用 (Zero Value Usability)**: 如果可能，设计你的类型，使其零值（如 `nil` slice, `nil` map, 空 struct）可以直接使用，减少不必要的初始化检查。
+
 *   **接收器类型 (Receiver Type)**: 选择值接收器 (`func (s MyStruct) Method()`) 或指针接收器 (`func (s *MyStruct) Method()`) 时：
     *   如果方法需要修改接收器，必须使用指针接收器。
     *   如果接收器是包含 [`sync.Mutex`](./go-concurrency.mdc#谨慎共享内存) 或类似同步字段的 struct，使用指针接收器以避免复制锁。
     *   如果接收器是大型 struct 或 array，使用指针接收器可能更高效 (参考 [指针 vs 值](./go-performance.mdc#指针-vs-值))。
     *   如果接收器是 map, slice, channel, function 等引用类型，或者是不需要修改的小型 struct/array，通常使用值接收器。
     *   保持同一类型的方法接收器类型一致性（要么都用指针，要么都用值，除非有充分理由）。
-*   **HTTP 中间件模式 (Middleware Pattern)**: 在 Web 开发中，广泛使用中间件模式来封装和复用请求处理逻辑（如日志、认证、限流、恢复等）。这些逻辑通常与[请求日志记录](./go-config-logging.mdc#请求日志)、[上下文管理](./go-context.mdc#上下文-context)、以及多种[安全措施](./go-security.mdc#7-web-应用安全)（如认证、限流、安全头设置）相关。项目结构中通常会有专门的 [middleware 目录](./go-packages.mdc#internal)。
-    *   **标准库签名**: 标准 `net/http` 中间件通常具有 `func(http.Handler) http.Handler` 签名。
-        '''go
-        func LoggingMiddleware(next http.Handler) http.Handler {
-            return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-                start := time.Now()
-                // 在调用下一个处理器之前执行逻辑
-                log.Printf("Started %s %s", r.Method, r.URL.Path)
 
-                next.ServeHTTP(w, r)
-
-                // 在调用下一个处理器之后执行逻辑
-                log.Printf("Completed %s in %v", r.URL.Path, time.Since(start))
-            })
-        }
-        '''
-    *   **框架适配**: 不同的 Web 框架可能有自己的中间件签名（例如，`gin.HandlerFunc`, `echo.MiddlewareFunc`），但核心思想是类似的：包装下一个处理器。
+*   **HTTP 中间件模式 (Middleware Pattern)**: 在 Web 开发中，广泛使用中间件模式来封装和复用请求处理逻辑。这些逻辑通常与[请求日志记录](./go-config-logging.mdc#请求日志)、[上下文管理](./go-context.mdc#上下文-context)、[弹性设计](./go-resilience.mdc)（如限流、熔断、恢复）以及多种[安全措施](./go-security.mdc#7-web-应用安全)（如认证、CORS、安全头）相关。
     *   **职责单一**: 每个中间件应专注于单一职责，使其易于理解、测试和组合。
-    *   **组合与链式调用**: 使用框架提供的路由器或专门的中间件链式库（如 `alice`）来组合多个中间件。
+    *   **组合与链式调用**: 使用框架提供的路由器或专门的中间件链式库来组合多个中间件。
     *   **AI 指导**: 建议将通用的请求处理逻辑（如日志、认证、恢复）提取到中间件中。引导用户根据所使用的框架实现正确的中间件签名。
+
+    ```go
+    // 标准库 net/http 中间件签名示例
+    func LoggingMiddleware(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            start := time.Now()
+            log.Printf("Started %s %s", r.Method, r.URL.Path)
+            next.ServeHTTP(w, r)
+            log.Printf("Completed %s in %v", r.URL.Path, time.Since(start))
+        })
+    }
+    ```

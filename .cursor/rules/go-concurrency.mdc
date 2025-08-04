@@ -1,24 +1,31 @@
 ---
 description: 
 globs: 
-alwaysApply: false
+alwaysApply: true
 ---
-# Go 并发编程指南 (v1.0)
+# Go 并发编程规范 (v2.1)
 
-本规则提供了 Go 语言并发编程的最佳实践，包括 Goroutine 管理、Channel 使用和同步原语的应用。
+> **注意**: 本规范之上存在一份 [全局元规则](mdc:_meta-rules.mdc)，其具有最高解释权。
 
-## 并发
+本规范旨在提供一套完整的、无二义性的 Go 并发编程标准。
 
-*   **优先 Channel**: "Share memory by communicating; don't communicate by sharing memory." 优先使用 Channel 在 Goroutine 之间传递数据和同步状态，这更符合 Go 的设计哲学，并能减少数据竞争的风险。
-*   **谨慎共享内存**: 如果必须使用共享内存，务必使用 `sync` 包提供的同步原语（如 `sync.Mutex`, `sync.RWMutex`, `sync.WaitGroup`, `sync.Once`, `sync.Cond`）来保护并发访问，防止数据竞争。
-*   **管理 Goroutine 生命周期**: 启动 Goroutine 后，要有明确的机制来管理其生命周期，确保它们在不再需要时能够正确退出。
-    *   使用 [context.Context](mdc:go-context.mdc) 进行取消信号的传播。
-    *   使用 `sync.WaitGroup` 等待一组 Goroutine 完成。
-    *   避免 Goroutine 泄漏（即 Goroutine 在无法退出的情况下持续运行）。
-    *   **AI 指导**: 分析 Goroutine 的创建，检查是否有相应的 `Context` 传递或 `WaitGroup` 使用，以及是否有明确的退出机制。
-*   **控制并发度**: 对于需要限制并发数量的场景（如 worker pool 或外部资源访问限制），考虑使用以下方式：
-    *   带缓冲的 Channel (作为信号量使用)。
-    *   `golang.org/x/sync/semaphore` 包。
-    *   **建议**: 参考 `go-patterns` 中的 `Bounded Parallelism` 或 `Semaphore` 模式。
-*   **避免死锁**: 仔细设计锁的获取顺序，避免循环等待。使用 `go vet` 等工具检查潜在的死锁。
-*   **Context 与并发**: 将 [context.Context](mdc:go-context.mdc) 传递给可能阻塞或长时间运行的 Goroutine，以便能够优雅地取消操作。
+## 1. Goroutine 生命周期管理
+
+*   **原则**: 任何被启动的 Goroutine，都**必须**有明确的、可预测的退出机制。
+*   **强制**:
+    1.  **可取消**: 任何可能阻塞或长时间运行的 Goroutine，其入口函数**必须**接受 `context.Context` 作为第一个参数，并**必须**在内部使用 `select` 语句监听 `ctx.Done()` 以响应取消信号。
+    2.  **可等待**: 当一个 Goroutine 启动了多个子 Goroutine 时，**必须**使用 `sync.WaitGroup` 来等待所有子 Goroutine 执行完毕。
+    3.  **禁止孤儿 Goroutine**: **严禁**创建无法被父级 Goroutine 控制或等待其完成的 Goroutine。
+
+## 2. 同步原语
+
+*   **互斥锁 (`sync.Mutex`)**:
+    *   **最小化临界区**: **必须**将 `Lock()` 和 `Unlock()` 调用之间的代码量减至最少。耗时操作（如 I/O）**必须**在锁区域之外执行。
+    *   **`defer`**: **必须**使用 `defer mu.Unlock()` 来确保锁的释放。
+*   **读写锁 (`sync.RWMutex`)**:
+    *   **使用场景**: **仅当**读操作远多于写操作时，才应使用 `RWMutex`。否则，**必须**使用 `sync.Mutex`。
+*   **并发度控制**:
+    *   对于会消耗有限资源的并发操作，**必须**控制其并发数量（如使用 Worker Pool 或带缓冲 Channel）。
+*   **死锁避免**:
+    *   如果需要获取多个锁，**必须**保证所有 Goroutine 都以**相同的顺序**获取这些锁。
+    *   **必须**在 CI 流程中加入 `go test -race` 进行数据竞争检测。

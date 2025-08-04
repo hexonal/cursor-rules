@@ -1,26 +1,28 @@
 ---
 description: 
 globs: 
-alwaysApply: false
+alwaysApply: true
 ---
-# Go Context 使用规范 (v1.0)
+# Go Context 使用规范 (v2.1)
 
-本规则定义了 `context.Context` 在 Go 项目中的正确使用方式，用于处理请求生命周期、取消信号和传递请求范围值。
+> **注意**: 本规范之上存在一份 [全局元规则](mdc:_meta-rules.mdc)，其具有最高解释权。
 
-## 上下文 (Context)
+本规范旨在提供一套完整的、无二义性的 `context.Context` 使用标准。
 
-*   **强制传递**: 对于处理请求边界（如 HTTP handlers）、涉及 I/O 操作 (网络、数据库、文件系统)、需要超时控制或需要在调用链中传递元数据的函数，**必须**接受 `context.Context` 作为其第一个参数。
-    *   规范签名: `func DoSomething(ctx context.Context, arg1 Type1, ...) (ResultType, error)`
-*   **用途**: `context.Context` 主要用于：
-    *   **取消信号 (Cancellation)**: 允许上游调用者向下游函数传播取消或超时的信号 (参见 [并发编程指南](mdc:go-concurrency.mdc#管理-goroutine-生命周期) 和 [安全编程指南](mdc:go-security.mdc#6-资源管理与-dos-防护))，以便下游函数可以及时停止工作、释放资源，防止不必要的计算和资源占用。
-    *   **超时/截止时间 (Deadline)**: 为一系列操作设置一个整体的最大执行时间 (相关应用见 [并发编程指南](mdc:go-concurrency.mdc#管理-goroutine-生命周期) 和 [安全编程指南](mdc:go-security.mdc#6-资源管理与-dos-防护))。
-    *   **请求范围值 (Request-scoped Values)**: 用于在单个请求的处理链中传递非关键路径的元数据，例如 [Trace ID, Request ID](mdc:go-config-logging.mdc#日志-logging) (用于日志上下文), User ID 等。**强烈不推荐**使用 `context.WithValue` 来传递函数必需的参数，这会使函数签名不清晰，依赖关系变得模糊。
-*   **Context 的创建与派生**: 
-    *   顶层 Context: 在请求的入口处创建（例如，对于 HTTP 请求，使用 `r.Context()`；对于后台任务，使用 `context.Background()` 或 `context.TODO()`）。
-    *   派生 Context: 使用 `context.WithCancel`, `context.WithDeadline`, `context.WithTimeout` 来创建具有取消或超时能力的新 Context。
-    *   传递值: 使用 `context.WithValue` 创建携带请求范围值的 Context。应使用自定义的、未导出的类型作为 key，以避免 key 冲突。 **[HTTP 中间件](mdc:go-idioms.mdc#http-中间件模式-middleware-pattern)是注入请求范围值 (如 Trace ID, User ID) 的常见位置。**
-*   **Context 不应存储在 Struct 中**: 通常不应将 `context.Context` 作为 struct 的字段。它应该在函数调用链中显式传递。
-*   **AI 指导**: 
-    *   检查函数签名，特别是涉及 I/O、阻塞操作或作为请求处理一部分的函数，确保 `context.Context` 被正确接受和传递。
-    *   检查 `context.WithValue` 的使用场景，确认其用于传递元数据而非必需参数。
-    *   检查 struct 定义，确保没有将 Context 作为字段存储。
+## 1. 核心原则
+
+*   **显式传递**: `context.Context` **必须**作为需要它的函数的第一个参数，且命名**必须**为 `ctx`。
+*   **禁止存储**: **严禁**将 `context.Context` 作为 `struct` 的字段。
+*   **强制接受场景**: 所有处理外部请求、执行 I/O、可能被阻塞或需要超时控制的函数，**必须**接受 `Context`。
+
+## 2. `Context` 的类型与用途
+
+*   **`WithValue` 使用**:
+    1.  **严禁**使用 `context.WithValue` 传递函数的核心参数或依赖项。
+    2.  `key` **必须**是自定义的、未导出的类型，以避免冲突。
+    3.  **允许传递的值**: 仅限于请求ID、追踪ID、认证信息等横切关注点的元数据。
+*   **空 `Context`**:
+    *   **`context.Background()`**: **必须**仅在调用链的顶层（如 `main` 函数）使用。
+    *   **`context.TODO()`**: **必须**仅作为临时占位符使用，并尽快替换为合适的 `Context`。
+*   **传递边界**:
+    *   **严禁**将请求的 `ctx` 传递给与该请求生命周期无关的后台 Goroutine。**必须**为其创建新的 `context.Background()`。

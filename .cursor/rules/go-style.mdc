@@ -1,24 +1,259 @@
 ---
-description: 
+description: "Go 代码风格与格式化规范 (v6.0)，融合了 etcd 和 go-zero 等优秀开源项目的最佳实践，提供一套完整的、无二义性的、包含详尽示例和架构原则的编码终极标准。"
 globs: 
-alwaysApply: false
+alwaysApply: true
 ---
-# Go 代码风格与格式化 (v1.0)
+# Go 代码风格与格式化规范 (v6.0)
 
-本规则定义了 Go 代码的风格、格式化、命名和注释规范，旨在提高代码的可读性和一致性。
+> **最高优先级**: 本规范所有条款均受 [全局元规则](mdc:_meta-rules.mdc) 约束。
 
-## 代码风格与格式化
+## 1. 格式化
 
-*   **强制格式化**: 所有 Go 代码提交前**必须**使用 `gofmt` 或 `goimports` 进行格式化。
-    *   **AI 操作**: 在进行任何代码修改或添加后，提醒或自动执行 `goimports -w <modified_file.go>`。
-*   **命名规范**:
-    *   **包名**: 使用简短、小写、有意义的名称，不含下划线或混合大小写。避免使用 `util`, `common`, `base` 等模糊名称 (详细的包命名原则参见 [Go 包设计与项目结构](mdc:go-packages.mdc#3-包命名-package-naming))。
-        *   **示例**: `net/http`, `encoding/json`
-        *   **AI 指导**: 创建新包时，询问用户合适的包名，并检查是否符合规范。
-    *   **变量/函数/类型**: 使用 `MixedCaps` 风格。
-    *   **接口**: 单方法接口通常以 "-er" 结尾 (如 `Reader`, `Writer`) 或描述其行为。
-    *   **公开符号**: 需要被外部包引用的符号（变量、常量、函数、类型、方法），首字母必须大写。内部符号首字母小写。
-*   **注释** (完整代码注释规范参见 [Go 代码注释规范](mdc:go-comments.mdc)):
-    *   **公开 API**: 所有公开的函数、类型、常量、变量都应有文档注释，解释其用途和目的。注释应是完整的句子。
-    *   **复杂逻辑**: 对非显而易见的逻辑、算法或决策添加注释说明"为什么"这样做。
-    *   **避免冗余**: 不要注释显而易见的代码。
+*   **强制工具**: 所有 Go 代码在提交前**必须**通过 `goimports` 工具进行格式化。`goimports` 是格式化的唯一标准。
+
+## 2. 声明与初始化
+
+*   **结构体初始化**:
+    *   **强制键值对**: **必须**使用 `field: value` 的键值对形式进行结构体初始化。
+    *   **强制多行格式**: 当结构体初始化包含多于一个字段时，**必须**采用多行格式，每个字段占一行，最后一个字段后也**必须**有逗号。
+    *   **强制对齐标签**: **所有**结构体字段的 `tag` **必须**在垂直方向上按列对齐。
+        ```go
+        // 正确示例
+        type User struct {
+            ID   int64  `json:"id"`
+            Name string `json:"name"`
+        }
+
+        u := User{
+            ID:   1,
+            Name: "Alice", // 最后一个字段后也有逗号
+        }
+        ```
+*   **变量声明**:
+    *   **`var` vs `:=`**:
+        *   当仅声明变量（依赖零值）时，**必须**使用 `var`。
+        *   在其他所有情况，**必须**优先使用 `:=`。
+    *   **变量遮蔽**: **严禁**在内层作用域使用 `:=` 重新声明一个已存在于外层作用域的变量。**必须**使用 `go vet` 在 CI 中检查此项。
+*   **常量与 `iota`**:
+    *   **iota 组**: 对于一组相关的递增常量，**必须**使用 `iota`。
+    *   **iota 注释**: `iota` 常量组**必须**有一个块注释来解释其用途，并为每个常量提供行注释。
+*   **`init()` 函数**:
+    *   **禁止**: **严禁**在 `init()` 函数中执行任何可能失败的操作（如 I/O、网络连接、复杂的计算）。
+    *   **唯一用途**: `init()` **仅**可用于初始化包级别的、无失败可能的变量。
+
+## 3. 命名规范
+
+*   **错误类型**: 自定义的错误类型 `struct` **必须**以 `Error` 结尾。
+*   **包、接口、变量、接收器等**: **必须**遵循本文件先前版本中定义的所有命名规则（如包名小写、接口-er后缀、接收器简短一致等）。
+
+## 4. 控制流与返回值
+
+*   **提前返回 (Guard Clauses)**: **必须**使用提前返回的风格来处理错误和预置条件。
+*   **错误返回**: 在 `if err != nil { ... }` 块中，**必须**直接 `return`，**严禁**在其后使用 `else`。
+    ```go
+    // 正确示例
+    if err != nil {
+        return fmt.Errorf("...: %w", err)
+    }
+    // 继续正常流程...
+
+    // 错误示例
+    if err != nil {
+        return fmt.Errorf("...: %w", err)
+    } else {
+        // ... 正常流程 ...
+    }
+    ```
+*   **零值 `struct` 返回**:
+    *   **查找/获取函数**: 如果函数的职责是"查找"或"获取"，且结果可能不存在，则在未找到的情况下**必须**返回 `(nil, ErrNotFound)`。
+    *   **创建/转换函数**: 如果函数的职责是"创建"或"转换"，即使结果为空，也**必须**返回一个零值的 `struct` 实例和 `nil` 错误，除非过程本身失败。
+
+## 5. 设计模式与架构原则
+
+本章节提供在大型 Go 项目中**必须**遵循的设计模式和架构原则，以确保代码的可维护性、可扩展性和健壮性。
+
+### 5.1. 依赖注入 (Dependency Injection - DI)
+
+*   **原则**: **严禁**在模块或结构体内部直接初始化其依赖项（如数据库连接、客户端等）。所有依赖项**必须**通过构造函数从外部传入。
+*   **实践**: 通常在 `main` 函数或服务的入口点统一初始化所有依赖，然后将它们注入到需要它们的各个模块中。
+    ```go
+    // 正确示例: 依赖通过构造函数注入
+    type UserService struct {
+        db *sql.DB
+    }
+
+    func NewUserService(db *sql.DB) *UserService {
+        return &UserService{db: db}
+    }
+
+    // 错误示例: 在内部初始化依赖
+    type BadUserService struct {
+        db *sql.DB
+    }
+
+    func NewBadUserService() *BadUserService {
+        // 错误：违反了DI原则，难以测试和替换
+        db, _ := sql.Open("mysql", "user:password@/dbname")
+        return &BadUserService{db: db}
+    }
+    ```
+
+### 5.2. 选项模式 (Functional Options Pattern)
+
+*   **原则**: 当一个结构体的配置项复杂（超过3个）、存在可选参数或未来可能扩展时，**必须**使用"选项模式"来构建其构造函数。
+    ```go
+    // 正确示例: 选项模式
+    type Server struct {
+        port    int
+        timeout time.Duration
+    }
+    type Option func(*Server)
+    
+    func WithPort(port int) Option {
+        return func(s *Server) { s.port = port }
+    }
+
+    func NewServer(opts ...Option) *Server {
+        srv := &Server{port: 8080} // 默认值
+        for _, opt := range opts {
+            opt(srv)
+        }
+        return srv
+    }
+    ```
+
+### 5.3. 接口隔离原则 (Interface Segregation Principle)
+
+*   **原则**: **必须**定义小而专一的接口。消费者不应被强迫依赖它们不需要的方法。
+    ```go
+    // 正确示例: 小接口
+    type Reader interface {
+        Read(p []byte) (n int, err error)
+    }
+    type Closer interface {
+        Close() error
+    }
+    // 组合成大接口
+    type ReadCloser interface {
+        Reader
+        Closer
+    }
+
+    // 错误示例: 大而全的接口
+    // BadStore 强迫使用者同时依赖用户和产品的存储逻辑。
+    type BadStore interface {
+        GetUser(id int) (*User, error)
+        CreateUser(u *User) error
+        GetProduct(id int) (*Product, error)
+    }
+    ```
+
+### 5.4. 组合优于继承
+
+*   **原则**: **必须**通过结构体嵌入（embedding）和组合来实现行为复用。**严禁**试图模拟传统面向对象的继承。
+
+### 5.5. 接口多样性设计 (Interface Diversity Pattern)
+
+*   **原则**: 对于复杂的功能，**必须**提供多种使用方式以满足不同场景的需求。
+*   **实践**: 参考 go-zero 的 Breaker 接口设计，为同一功能提供基础版本、Context 版本、带自定义判断的版本等。
+    ```go
+    // 优秀示例：多样化的接口设计
+    type Service interface {
+        // 基础版本
+        Do(req func() error) error
+        // 支持 Context
+        DoCtx(ctx context.Context, req func() error) error
+        // 支持自定义成功判断
+        DoWithAcceptable(req func() error, acceptable Acceptable) error
+        // Context + 自定义判断
+        DoWithAcceptableCtx(ctx context.Context, req func() error, acceptable Acceptable) error
+    }
+    ```
+
+## 6. 并发控制模式
+
+### 6.1. 分布式锁实现
+
+*   **原则**: 分布式锁的实现**必须**考虑超时、续约、防止死锁等问题。
+*   **实践**: 参考 etcd 的分布式锁实现：
+    ```go
+    // 获取锁时使用事务保证原子性
+    func (m *Mutex) tryAcquire(ctx context.Context) (*v3.TxnResponse, error) {
+        s := m.s
+        client := m.s.Client()
+        
+        m.myKey = fmt.Sprintf("%s%x", m.pfx, s.Lease())
+        cmp := v3.Compare(v3.CreateRevision(m.myKey), "=", 0)
+        put := v3.OpPut(m.myKey, "", v3.WithLease(s.Lease()))
+        get := v3.OpGet(m.myKey)
+        getOwner := v3.OpGet(m.pfx, v3.WithFirstCreate()...)
+        
+        resp, err := client.Txn(ctx).
+            If(cmp).
+            Then(put, getOwner).
+            Else(get, getOwner).
+            Commit()
+        
+        return resp, err
+    }
+    ```
+
+### 6.2. 读写锁模式
+
+*   **原则**: 对于读多写少的场景，**必须**使用读写锁来提高并发性能。
+*   **注意**: 读锁和写锁的获取顺序**必须**保持一致，避免死锁。
+
+## 7. 工具驱动开发
+
+### 7.1. 代码生成优先
+
+*   **原则**: 对于重复性代码，**必须**优先考虑使用代码生成而非手写。
+*   **场景**: 
+    - API 路由注册
+    - 请求/响应结构体
+    - 数据库 CRUD 操作
+    - 测试用例模板
+
+### 7.2. 自定义 Linter
+
+*   **推荐**: 对于团队特定的编码规范，**应该**开发自定义的 linter 规则。
+*   **集成**: 自定义 linter **必须**集成到 CI/CD 流程中。
+
+## 8. 性能关键路径
+
+### 8.1. 对象池使用
+
+*   **原则**: 对于频繁创建和销毁的大对象，**必须**使用 `sync.Pool`。
+*   **注意**: 从 Pool 获取的对象**必须**在使用前重置状态。
+    ```go
+    var bufferPool = sync.Pool{
+        New: func() interface{} {
+            return new(bytes.Buffer)
+        },
+    }
+    
+    func ProcessData(data []byte) {
+        buf := bufferPool.Get().(*bytes.Buffer)
+        defer func() {
+            buf.Reset() // 重置状态
+            bufferPool.Put(buf)
+        }()
+        
+        // 使用 buffer...
+    }
+    ```
+
+### 8.2. 预分配策略
+
+*   **强制**: 在以下场景**必须**预分配容量：
+    1. 已知大小的 slice 创建
+    2. 已知大小的 map 创建
+    3. bytes.Buffer 或 strings.Builder 的使用
+    ```go
+    // 正确示例
+    users := make([]User, 0, len(ids))
+    cache := make(map[string]User, expectedSize)
+    
+    var b strings.Builder
+    b.Grow(estimatedSize)
+    ```
