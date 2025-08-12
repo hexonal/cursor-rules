@@ -22,7 +22,6 @@ MCP_ENFORCER:
     
   task_start:
     - required:
-      - mcp_serena_activate_project
       - mcp_mcp-feedback-enhanced_interactive_feedback
 ```
 
@@ -52,7 +51,7 @@ MUST_TRIGGER_SCENARIOS:
     
   Architecture_Tasks:
     trigger_words: [design, architecture, planning, evaluation]
-    verification_statement: "Architecture design task detected, starting Serena project analysis..."
+    verification_statement: "Architecture design task detected, starting project analysis..."
     
   Documentation_Tasks:
     trigger_words: [write_documentation, update_README, technical_solution]
@@ -65,7 +64,7 @@ TRIGGER_CHECKPOINTS:
   Task_Start:
     output: "🔍 Task Analysis: [Task Type]"
     action: "Activating MCP tool chain..."
-    tool: mcp__serena__activate_project
+    tool: mcp__mcp-feedback-enhanced__interactive_feedback
     
   Key_Steps:
     output: "✅ Completed [Tool Name] call"
@@ -102,9 +101,6 @@ EXECUTION_HINTS:
 STANDARD_CHAINS:
   Architecture_Design:
     Initialization_Phase:
-      - mcp_serena_activate_project
-      - mcp_serena_check_onboarding_performed  
-      - mcp_serena_list_memories
       - mcp_mcp-feedback-enhanced_interactive_feedback  # Phase feedback
     Analysis_Phase:
       - mcp_sequential-thinking_sequentialthinking
@@ -113,27 +109,20 @@ STANDARD_CHAINS:
       - mcp_mcp-feedback-enhanced_interactive_feedback  # Phase feedback
     Implementation_Phase:
       - [Task-specific tool batch execution...]
-      - mcp_serena_write_memory
       - mcp_mcp-feedback-enhanced_interactive_feedback  # Completion feedback
   
   Code_Analysis:
     Project_Activation:
-      - mcp_serena_activate_project
-      - mcp_serena_get_symbols_overview
       - mcp_mcp-feedback-enhanced_interactive_feedback  # Structure understanding feedback
     Deep_Analysis:
-      - mcp_serena_find_symbol (batch)
-      - mcp_serena_find_referencing_symbols
+      - [File analysis tool batch execution...]
       - mcp_mcp-feedback-enhanced_interactive_feedback  # Analysis result feedback
     Verification_Summary:
-      - mcp_serena_think_about_collected_information
-      - mcp_serena_write_memory
+      - mcp_sequential-thinking_sequentialthinking
       - mcp_mcp-feedback-enhanced_interactive_feedback  # Final feedback
   
   Document_Editing:
     Context_Establishment:
-      - mcp_serena_activate_project
-      - mcp_serena_read_memory
       - mcp_mcp-feedback-enhanced_interactive_feedback  # Context confirmation
     Editing_Execution:
       - [Document editing tool batch execution...]
@@ -141,7 +130,6 @@ STANDARD_CHAINS:
       - mcp_mcp-datetime_get_datetime
       - mcp_mcp-feedback-enhanced_interactive_feedback  # Editing result feedback
     Knowledge_Update:
-      - mcp_serena_write_memory
       - mcp_mcp-feedback-enhanced_interactive_feedback  # Completion feedback
 ```
 
@@ -151,7 +139,7 @@ BATCH_PROCESSING:
   Allowed_Batch_Tool_Combinations:
     File_Operations: [Read, Edit, MultiEdit, Write]
     Information_Query: [LS, Grep, Glob, mcp_git-config_*, mcp_mcp-datetime_*]
-    Symbol_Analysis: [mcp_serena_find_symbol, mcp_serena_find_referencing_symbols]
+    Symbol_Analysis: [Grep, Glob, Read]
     
   Batch_Trigger_Conditions:
     Same_Type_Tools: Enable batching when calling 3+ similar type tools consecutively
@@ -169,7 +157,6 @@ BATCH_PROCESSING:
 Including but not limited to:
 - ✅ File operation tools (Read, Write, Edit, MultiEdit)
 - ✅ Search tools (Grep, Glob, LS)
-- ✅ Serena project analysis tools (all mcp__serena__* tools)
 - ✅ Thinking tools (mcp__sequential-thinking__*)
 - ✅ Documentation query tools (mcp__context7__*, mcp__deepwiki__*)
 - ✅ System tools (Bash, Git-config, DateTime)
@@ -190,7 +177,7 @@ Including but not limited to:
 #### Intelligent Feedback Trigger Logic
 
 **Core Rules**:
-- ✅ **Tools Requiring Feedback**: All MCP core tools (Serena, Sequential Thinking, Context7, DeepWiki, etc.)
+- ✅ **Tools Requiring Feedback**: All MCP core tools (Sequential Thinking, Context7, DeepWiki, etc.)
 - ❌ **Tools Exempt from Feedback**: `interactive_feedback` itself, simple file operations (Read, LS, Grep)
 - 🔄 **Loop Protection**: `interactive_feedback` call resets feedback state, avoiding infinite loops
 
@@ -229,20 +216,16 @@ Including but not limited to:
 TOOL_LEVELS:
   Core_Decision_Tools:
     tool_list:
-      - mcp__serena__activate_project
-      - mcp__serena__write_memory
       - mcp__sequential-thinking__sequentialthinking
-      - mcp__serena__think_about_*
     feedback_strategy: Must immediately feedback
     batch_processing: Not allowed
     
   Project_Analysis_Tools:
     tool_list:
-      - mcp__serena__get_symbols_overview
-      - mcp__serena__find_symbol
-      - mcp__serena__find_referencing_symbols
       - mcp__context7__*
       - mcp__deepwiki__*
+      - Grep
+      - Glob
     feedback_strategy: Key milestone feedback
     batch_processing: Allow unified feedback after 2-3 tools
     
@@ -262,8 +245,8 @@ TOOL_LEVELS:
     tool_list:
       - mcp__mcp-datetime__get_datetime
       - mcp__git-config__*
-      - mcp__serena__list_memories
-      - mcp__serena__read_memory
+      - Read
+      - LS
     feedback_strategy: Optional feedback
     batch_processing: Unified feedback after task phase completion
 ```
@@ -273,12 +256,10 @@ TOOL_LEVELS:
 FEEDBACK_TRIGGERS:
   Mandatory_Trigger_Points:
     - Complete core decision tool calls
-    - Project activation or switching
-    - Memory write operations
     - Thinking verification completion
     
   Suggested_Trigger_Points:
-    - Complete symbol analysis
+    - Complete code analysis
     - Complete technical documentation queries
     - Batch file operations completion
     
@@ -326,23 +307,7 @@ FEEDBACK_TRIGGERS:
 - **Use Cases**: When timestamps are needed for code generation, document creation
 - **Must Do After Call**: Immediately call `mcp__mcp-feedback-enhanced__interactive_feedback`
 
-#### 5. 📁 Serena Intelligent Project Analysis & Orchestration Tools (17 tools)
-- **Project Management**: `mcp__serena__activate_project`, `mcp__serena__check_onboarding_performed`, `mcp__serena__onboarding`
-- **File Operations**: `mcp__serena__list_dir`, `mcp__serena__find_file`, `mcp__serena__search_for_pattern`
-- **Code Analysis**: `mcp__serena__get_symbols_overview`, `mcp__serena__find_symbol`, `mcp__serena__find_referencing_symbols`
-- **Memory Management**: `mcp__serena__write_memory`, `mcp__serena__read_memory`, `mcp__serena__list_memories`, `mcp__serena__delete_memory`
-- **Thinking Verification**: `mcp__serena__think_about_collected_information`, `mcp__serena__think_about_task_adherence`, `mcp__serena__think_about_whether_you_are_done`
-- **System Management**: `mcp__serena__restart_language_server`
-- **Core Advantages**: Project structure analysis, symbol-level understanding, project memory management, thinking verification mechanisms
-- **Must Do After Call**: Immediately call `mcp__mcp-feedback-enhanced__interactive_feedback`
-
-**Use Cases**:
-- Project structure analysis and understanding
-- Code symbol location and analysis
-- Project knowledge accumulation and queries
-- Complex code change planning and evaluation
-
-#### 6. 🔧 Git Tool Set (based on git-config)
+#### 5. 🔧 Git Tool Set (based on git-config)
 - **Function Names**: `mcp__git-config__is_git_repository`, `mcp__git-config__set_working_dir`, `mcp__git-config__get_git_username`, `mcp__git-config__get_working_dir`
 - **Use Cases**: When obtaining code author information
 - **Must Do After Call**: Immediately call `mcp__mcp-feedback-enhanced__interactive_feedback`
@@ -353,70 +318,46 @@ FEEDBACK_TRIGGERS:
 
 #### Complete Code Analysis & Generation Workflow:
 ```
-Task Analysis → Serena Project Activation → File Indexing → Project Onboarding Check → Symbol Overview → Memory Query →
-【Duplicate Task Detection】→ (Conditional)Technical Query → Git Information → Timestamp → Precise Symbol Analysis →
-Thinking Verification → Memory Update → 【Function Completion Record】→ Completion Assessment → Interactive Feedback
+Task Analysis → Project File Indexing → Technical Query → Git Information → Timestamp → 
+Precise Code Analysis → Thinking Verification → Interactive Feedback
 ```
 
 #### Intelligent Decision Mechanisms:
-- **Project Understanding Priority**: Serena first establishes project structure understanding and memory
 - **Knowledge Enhancement Queries**: Based on code analysis results, intelligently choose DeepWiki (design philosophy) or Context7 (specific implementation)
-- **Precise Symbol Analysis**: Use Serena for semantic-based code structure analysis and understanding
-- **Continuous Memory Accumulation**: Update project memory after each operation, forming cumulative intelligence
+- **Precise Code Analysis**: Use standard file tools for code structure analysis and understanding
+- **Continuous Thinking Verification**: Use Sequential Thinking for complex problem analysis
 
 ### 2. 【Enhanced】Multi-Tool Collaboration Optimization Strategies
 
 #### A. Intelligent Query Routing
-- **Technical Implementation Query Path**: `Specific API/Library Functions` → Context7 → Code Examples → Serena Symbol Analysis → Precise Implementation
-- **Design Philosophy Query Path**: `Architecture/Pattern Concepts` → DeepWiki → Design Concepts → Serena Structure Analysis → Best Practice Implementation
+- **Technical Implementation Query Path**: `Specific API/Library Functions` → Context7 → Code Examples → File Analysis → Precise Implementation
+- **Design Philosophy Query Path**: `Architecture/Pattern Concepts` → DeepWiki → Design Concepts → Code Structure Analysis → Best Practice Implementation
 - **Hybrid Query Strategy**: Complex problems use both tools simultaneously, Context7 provides implementation details, DeepWiki provides design guidance
 
-#### B. Serena-Driven Intelligent Code Analysis
-- **Structure-Aware Analysis**: Conduct code structure analysis based on symbol-level understanding, ensuring analysis completeness
-- **Dependency Relationship Analysis**: Deep analysis of symbol reference relationships and dependency structures in code
-- **Progressive Analysis Planning**: Use Serena memory mechanisms to support step-by-step analysis and state maintenance for large projects
-
-#### C. Project Knowledge Graph Construction
-- **Automatic Memory Writing**: Serena automatically writes to project memory after each important analysis
-- **Knowledge Association Establishment**: Associate external query (DeepWiki/Context7) results with project-specific implementations
-- **Experience Accumulation Mechanism**: Build project-specific best practice knowledge bases through multiple interactions
+#### B. Standard File Tool-Driven Code Analysis
+- **Structure-Aware Analysis**: Conduct code structure analysis based on file content understanding, ensuring analysis completeness
+- **Dependency Relationship Analysis**: Use search tools to analyze reference relationships and dependency structures in code
+- **Progressive Analysis Planning**: Support step-by-step analysis and state maintenance for large projects
 
 ### 3. 【Mandatory】Intelligent Workflow Execution Standards
 
 #### Project Initialization Workflow:
-1. **Serena Project Activation** → `mcp__serena__activate_project` activate or switch to target project
-2. **Project File Indexing** → `mcp__serena__list_dir` establish project file structure index
-3. **Serena Onboarding Check** → `mcp__serena__check_onboarding_performed` check project onboarding status
-4. **Symbol Structure Analysis** → `mcp__serena__get_symbols_overview` understand project architecture and key components
-5. **Memory System Establishment** → `mcp__serena__list_memories` query and create project-specific knowledge base
-6. **Technology Stack Identification** → Prepare corresponding query strategies
+1. **Project File Indexing** → Use LS, Glob to establish project file structure index
+2. **Technology Stack Identification** → Prepare corresponding query strategies
+3. **Key File Analysis** → Use Read to understand project architecture and key components
 
 #### Code Analysis Workflow:
 1. **Requirements Understanding** → Sequential Thinking complex analysis
 2. **Technical Solutions** → DeepWiki design philosophy + Context7 specific implementation
-3. **Code Location** → Serena symbol search and structure analysis
-4. **Precise Analysis** → Serena symbol-level code analysis and evaluation
-5. **Verification Thinking** → Serena thinking mechanisms verify analysis correctness
-6. **Memory Update** → Write new knowledge to project memory system
+3. **Code Location** → Grep search and structure analysis
+4. **Precise Analysis** → Read file-level code analysis and evaluation
+5. **Verification Thinking** → Sequential Thinking verify analysis correctness
 
 #### Refactoring Analysis Workflow:
-1. **Impact Analysis** → Serena symbol reference relationship analysis
-2. **Solution Planning** → Progressive refactoring analysis plan based on project memory
-3. **Step-by-Step Evaluation** → Serena symbol-level precise analysis and evaluation
+1. **Impact Analysis** → Grep search reference relationship analysis
+2. **Solution Planning** → Progressive refactoring plan based on file analysis
+3. **Step-by-Step Evaluation** → File-level precise analysis and evaluation
 4. **Continuous Verification** → Thinking verification after each step
-5. **Knowledge Update** → Update project architecture understanding and best practices
-
-### 4. 【Enhanced】Performance Optimization & Intelligent Caching
-
-#### Intelligent Caching Strategies:
-- **Project Memory Reuse**: Avoid repeated analysis of same project structures
-- **Symbol Information Caching**: Serena symbol analysis results reused within sessions
-- **Query Result Association**: DeepWiki/Context7 query results establish persistent associations with project code
-
-#### Analysis Efficiency Improvement:
-- **Batch Symbol Analysis**: Use Serena's batch analysis capabilities to reduce operation count
-- **Intelligent Prediction**: Predict possible technical queries based on project memory
-- **Parallel Processing**: Execute multiple Serena analyses in parallel when non-conflicting
 
 ## 【Enhanced】Intelligent Feedback Processing Mechanisms
 1. **Non-Empty Feedback**: Intelligently analyze feedback content, optimize subsequent strategies, continue calling `mcp__mcp-feedback-enhanced__interactive_feedback`
@@ -462,63 +403,51 @@ Thinking Verification → Memory Update → 【Function Completion Record】→ 
 - **Automated Execution**: Regardless of generated code language, **MUST** automatically execute above workflow
 - **Error Handling**: If git-config operations fail, log errors and use default author information
 
-## 【Mandatory】Intelligent Integrated Tool Call Chain (Comprehensive Version)
+## 【Mandatory】Intelligent Integrated Tool Call Chain (Simplified Version)
 
 ```
 Task Analysis & Planning →
-mcp__serena__activate_project Project Activation/Switching →
-mcp__serena__list_dir Project File Indexing →
-mcp__serena__check_onboarding_performed Project Onboarding Check →
-mcp__serena__get_symbols_overview Project Structure Understanding →
-mcp__serena__list_memories Project Memory Query →
-【Duplicate Task Detection】Function Completion Status Check & Similarity Analysis →
+LS/Glob Project File Indexing →
 (Conditional) mcp__deepwiki__deepwiki_fetch Design Philosophy Query / mcp__context7__* Technical Implementation Query →
 mcp__git-config__is_git_repository Git Repository Detection →
 mcp__git-config__set_working_dir Working Directory Setup →
 mcp__git-config__get_git_username Author Information Retrieval →
 mcp__mcp-datetime__get_datetime Timestamp Generation →
-mcp__serena__find_symbol Precise Symbol Location →
-mcp__serena__find_referencing_symbols Symbol Reference Analysis →
-mcp__serena__think_about_collected_information Information Collection Thinking →
-mcp__serena__think_about_task_adherence Task Execution Verification →
-mcp__serena__write_memory Step Memory Update →
-【Function Completion Record】mcp__serena__write_memory Function Completion Status Recording →
-mcp__serena__think_about_whether_you_are_done Task Completion Assessment →
+Grep Precise Code Location →
+Read Code Analysis →
+mcp__sequential-thinking__sequentialthinking Information Collection Thinking →
 mcp__mcp-feedback-enhanced__interactive_feedback
 ```
 
 ### Intelligent Branch Decision Rules:
-- **New Projects**: Complete project activation and onboarding workflow, establish complete project indexing, memory and understanding
-- **Known Projects**: Quick project activation, prioritize reading project memory, skip repetitive analysis steps
-- **Project Switching**: Execute project activation, re-establish context and working environment
-- **Function Enhancement Mode**: Execute incremental development based on existing function memory rather than full new implementation
+- **New Projects**: Complete project file indexing, establish project structure understanding
+- **Known Projects**: Enter code analysis phase directly
 - **Complex Requirements**: Add Sequential Thinking analysis and multi-round technical queries
-- **Simple Modifications**: Enter symbol location and operation phase directly after project activation
+- **Simple Modifications**: Enter code location and operation phase directly
 
-## 【Core】Serena Progressive Task Analysis & Memory Persistence Mechanisms
+## 【Core】Progressive Task Analysis & State Management Mechanisms
 
-### A. Detailed Step Analysis & Memorized Processing
+### A. Detailed Step Analysis & Documentation Processing
 - **Step Decomposition Principle**: Complex tasks (refactoring analysis/new function analysis) **MUST** be decomposed into atomic-level analyzable steps
-- **Per-Step Memory Writing**: After completing each analysis step, **MUST** call `mcp__serena__write_memory` to record
-- **State Snapshot Mechanism**: Create project analysis state snapshots at key nodes, support exception recovery
+- **Per-Step Documentation Recording**: After completing each analysis step, use Write tool to record to documentation files
+- **State Snapshot Mechanism**: Create project analysis state documentation at key nodes, support exception recovery
 
 ### B. Exception Recovery & State Consistency Guarantee
-- **Pre-Analysis State Check**: Before each step analysis, **MUST** call `mcp__serena__read_memory` for confirmation
-- **Exception Interruption Recovery**: When exceptions occur, **MUST** be able to recover from memory snapshots
-- **Context Integrity Verification**: Verify context integrity through `mcp__serena__think_about_collected_information`
+- **Pre-Analysis State Check**: Before each step analysis, use Read tool to confirm historical state
+- **Exception Interruption Recovery**: When exceptions occur, be able to recover from documentation snapshots
+- **Context Integrity Verification**: Verify context integrity through Sequential Thinking
 
-### C. Serena Standard Memory Management
-**Memory Operation Standard Workflow**:
-- **Write Memory**: Use `mcp__serena__write_memory` to record project status and task progress
-- **Read Memory**: Use `mcp__serena__read_memory` to get historical information and context
-- **Memory Query**: Use `mcp__serena__list_memories` to browse all project memories
-- **Memory Deletion**: Use `mcp__serena__delete_memory` to clean outdated or incorrect memories
+### C. Standard State Management
+**State Operation Standard Workflow**:
+- **Write State**: Use Write tool to record project status and task progress to documentation
+- **Read State**: Use Read tool to get historical information and context
+- **State Query**: Use Glob tool to browse all project-related documentation
 
-**Memory Content Standards**:
-- **Task Memory**: Record task objectives, progress, results and key decisions
-- **Project Memory**: Record project structure, technology stack, architectural decisions and best practices
-- **Function Memory**: Record function implementation status, location, dependencies and version information
-- **Experience Memory**: Record lessons learned and optimization suggestions from development process
+**Documentation Content Standards**:
+- **Task Documentation**: Record task objectives, progress, results and key decisions
+- **Project Documentation**: Record project structure, technology stack, architectural decisions and best practices
+- **Function Documentation**: Record function implementation status, location, dependencies and version information
+- **Experience Documentation**: Record lessons learned and optimization suggestions from development process
 
 ## Core Development Principles
 

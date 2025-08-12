@@ -22,7 +22,6 @@ MCP_ENFORCER:
     
   task_start:
     - required:
-      - mcp_serena_activate_project
       - mcp_mcp-feedback-enhanced_interactive_feedback
 ```
 
@@ -52,7 +51,7 @@ MUST_TRIGGER_SCENARIOS:
     
   架构任务:
     触发词: [设计, 架构, 规划, 评估]
-    验证语句: "检测到架构设计任务，启动Serena项目分析..."
+    验证语句: "检测到架构设计任务，启动项目分析..."
     
   文档任务:
     触发词: [编写文档, 更新README, 技术方案]
@@ -65,7 +64,7 @@ TRIGGER_CHECKPOINTS:
   任务开始:
     输出: "🔍 任务分析：[任务类型]"
     行动: "正在激活MCP工具链..."
-    工具: mcp__serena__activate_project
+    工具: mcp__mcp-feedback-enhanced__interactive_feedback
     
   关键步骤:
     输出: "✅ 完成 [工具名称] 调用"
@@ -102,9 +101,6 @@ EXECUTION_HINTS:
 STANDARD_CHAINS:
   架构设计:
     初始化阶段:
-      - mcp_serena_activate_project
-      - mcp_serena_check_onboarding_performed  
-      - mcp_serena_list_memories
       - mcp_mcp-feedback-enhanced_interactive_feedback  # 阶段反馈
     分析阶段:
       - mcp_sequential-thinking_sequentialthinking
@@ -113,27 +109,20 @@ STANDARD_CHAINS:
       - mcp_mcp-feedback-enhanced_interactive_feedback  # 阶段反馈
     实施阶段:
       - [任务特定工具批量执行...]
-      - mcp_serena_write_memory
       - mcp_mcp-feedback-enhanced_interactive_feedback  # 完成反馈
   
   代码分析:
     项目激活:
-      - mcp_serena_activate_project
-      - mcp_serena_get_symbols_overview
       - mcp_mcp-feedback-enhanced_interactive_feedback  # 结构理解反馈
     深度分析:
-      - mcp_serena_find_symbol (批量)
-      - mcp_serena_find_referencing_symbols
+      - [文件分析工具批量执行...]
       - mcp_mcp-feedback-enhanced_interactive_feedback  # 分析结果反馈
     验证总结:
-      - mcp_serena_think_about_collected_information
-      - mcp_serena_write_memory
+      - mcp_sequential-thinking_sequentialthinking
       - mcp_mcp-feedback-enhanced_interactive_feedback  # 最终反馈
   
   文档编辑:
     上下文建立:
-      - mcp_serena_activate_project
-      - mcp_serena_read_memory
       - mcp_mcp-feedback-enhanced_interactive_feedback  # 上下文确认
     编辑执行:
       - [文档编辑工具批量执行...]
@@ -141,7 +130,6 @@ STANDARD_CHAINS:
       - mcp_mcp-datetime_get_datetime
       - mcp_mcp-feedback-enhanced_interactive_feedback  # 编辑结果反馈
     知识更新:
-      - mcp_serena_write_memory
       - mcp_mcp-feedback-enhanced_interactive_feedback  # 完成反馈
 ```
 
@@ -151,7 +139,7 @@ BATCH_PROCESSING:
   允许批处理的工具组合:
     文件操作组: [Read, Edit, MultiEdit, Write]
     信息查询组: [LS, Grep, Glob, mcp_git-config_*, mcp_mcp-datetime_*]
-    符号分析组: [mcp_serena_find_symbol, mcp_serena_find_referencing_symbols]
+    符号分析组: [Grep, Glob, Read]
     
   批处理触发条件:
     同类型工具: 连续调用3个以上同类型工具时启用批处理
@@ -169,7 +157,6 @@ BATCH_PROCESSING:
 包括但不限于：
 - ✅ 文件操作工具（Read、Write、Edit、MultiEdit）
 - ✅ 搜索工具（Grep、Glob、LS）
-- ✅ Serena 项目分析工具（所有 mcp__serena__* 工具）
 - ✅ 思考工具（mcp__sequential-thinking__*）
 - ✅ 文档查询工具（mcp__context7__*、mcp__deepwiki__*）
 - ✅ 系统工具（Bash、Git-config、DateTime）
@@ -190,7 +177,7 @@ BATCH_PROCESSING:
 #### 智能反馈触发逻辑
 
 **核心规则**：
-- ✅ **需要反馈的工具**：所有 MCP 核心工具（Serena、Sequential Thinking、Context7、DeepWiki 等）
+- ✅ **需要反馈的工具**：所有 MCP 核心工具（Sequential Thinking、Context7、DeepWiki 等）
 - ❌ **免除反馈的工具**：`interactive_feedback` 本身、简单文件操作（Read、LS、Grep）
 - 🔄 **循环防护**：`interactive_feedback` 调用后重置反馈状态，避免无限循环
 
@@ -229,20 +216,16 @@ BATCH_PROCESSING:
 TOOL_LEVELS:
   核心决策工具:
     工具列表:
-      - mcp__serena__activate_project
-      - mcp__serena__write_memory
       - mcp__sequential-thinking__sequentialthinking
-      - mcp__serena__think_about_*
     反馈策略: 必须立即反馈
     批处理: 不允许
     
   项目分析工具:
     工具列表:
-      - mcp__serena__get_symbols_overview
-      - mcp__serena__find_symbol
-      - mcp__serena__find_referencing_symbols
       - mcp__context7__*
       - mcp__deepwiki__*
+      - Grep
+      - Glob
     反馈策略: 关键节点反馈
     批处理: 允许2-3个工具后统一反馈
     
@@ -262,8 +245,8 @@ TOOL_LEVELS:
     工具列表:
       - mcp__mcp-datetime__get_datetime
       - mcp__git-config__*
-      - mcp__serena__list_memories
-      - mcp__serena__read_memory
+      - Read
+      - LS
     反馈策略: 可选反馈
     批处理: 完成任务阶段后统一反馈
 ```
@@ -273,12 +256,10 @@ TOOL_LEVELS:
 FEEDBACK_TRIGGERS:
   强制触发点:
     - 完成核心决策工具调用
-    - 项目激活或切换
-    - 记忆写入操作
     - 思考验证完成
     
   建议触发点:
-    - 完成符号分析
+    - 完成代码分析
     - 完成技术文档查询
     - 批量文件操作完成
     
@@ -326,23 +307,7 @@ FEEDBACK_TRIGGERS:
 - **使用场景**: 代码生成、文档创建需要时间戳时使用
 - **调用后必须**: 立即调用 `mcp__mcp-feedback-enhanced__interactive_feedback`
 
-#### 5. 📁 Serena 智能项目分析与编排工具（17个工具）
-- **项目管理**: `mcp__serena__activate_project`, `mcp__serena__check_onboarding_performed`, `mcp__serena__onboarding`
-- **文件操作**: `mcp__serena__list_dir`, `mcp__serena__find_file`, `mcp__serena__search_for_pattern`
-- **代码分析**: `mcp__serena__get_symbols_overview`, `mcp__serena__find_symbol`, `mcp__serena__find_referencing_symbols`
-- **记忆管理**: `mcp__serena__write_memory`, `mcp__serena__read_memory`, `mcp__serena__list_memories`, `mcp__serena__delete_memory`
-- **思考验证**: `mcp__serena__think_about_collected_information`, `mcp__serena__think_about_task_adherence`, `mcp__serena__think_about_whether_you_are_done`
-- **系统管理**: `mcp__serena__restart_language_server`
-- **核心优势**: 项目结构分析、符号级理解、项目记忆管理、思考验证机制
-- **调用后必须**: 立即调用 `mcp__mcp-feedback-enhanced__interactive_feedback`
-
-**使用场景**:
-- 项目结构分析和理解
-- 代码符号定位和分析
-- 项目知识积累和查询
-- 复杂代码变更的规划和评估
-
-#### 6. 🔧 Git 工具集（基于git-config）
+#### 5. 🔧 Git 工具集（基于git-config）
 - **函数名**: `mcp__git-config__is_git_repository`、`mcp__git-config__set_working_dir`、`mcp__git-config__get_git_username`、`mcp__git-config__get_working_dir`
 - **使用场景**: 获取代码作者信息时使用
 - **调用后必须**: 立即调用 `mcp__mcp-feedback-enhanced__interactive_feedback`
@@ -353,70 +318,46 @@ FEEDBACK_TRIGGERS:
 
 #### 代码分析与生成的完整流程：
 ```
-任务分析 → Serena项目激活 → 文件索引 → 项目入门检查 → 符号概览 → 记忆查询 →
-【重复任务检测】→ (条件性)技术查询 → Git信息 → 时间戳 → 精确符号分析 →
-思考验证 → 记忆更新 → 【功能完成记录】→ 完成度评估 → Interactive Feedback
+任务分析 → 项目文件索引 → 技术查询 → Git信息 → 时间戳 → 
+精确代码分析 → 思考验证 → Interactive Feedback
 ```
 
 #### 智能决策机制：
-- **项目理解优先**：Serena 首先建立项目结构理解和记忆
 - **知识增强查询**：基于代码分析结果，智能选择 DeepWiki（设计思想）或 Context7（具体实现）
-- **精确符号分析**：使用 Serena 进行基于语义的代码分析和理解
-- **持续记忆积累**：每次操作后更新项目记忆，形成累积智能
+- **精确代码分析**：使用标准文件工具进行代码结构分析和理解
+- **持续思考验证**：使用 Sequential Thinking 进行复杂问题分析
 
 ### 2. 【增强】多工具协同优化策略
 
 #### A. 智能查询路由
-- **技术实现查询路径**：`具体API/库函数` → Context7 → 代码示例 → Serena符号分析 → 精确实现
-- **设计思想查询路径**：`架构/模式概念` → DeepWiki → 设计理念 → Serena结构分析 → 最佳实践实现
+- **技术实现查询路径**：`具体API/库函数` → Context7 → 代码示例 → 文件分析 → 精确实现
+- **设计思想查询路径**：`架构/模式概念` → DeepWiki → 设计理念 → 代码结构分析 → 最佳实践实现
 - **混合查询策略**：复杂问题同时使用两个工具，Context7提供实现细节，DeepWiki提供设计指导
 
-#### B. Serena 驱动的智能代码分析
-- **结构感知分析**：基于符号级理解进行代码结构分析，保证分析的完整性
-- **依赖关系分析**：深度分析代码中的符号引用关系和依赖结构
-- **渐进式分析规划**：使用 Serena 记忆机制，支持大型项目的分步分析和状态保持
-
-#### C. 项目知识图谱构建
-- **自动记忆写入**：每次重要分析后，Serena自动写入项目记忆
-- **知识关联建立**：将外部查询（DeepWiki/Context7）结果与项目特定实现关联
-- **经验累积机制**：通过多次交互，建立项目特定的最佳实践知识库
+#### B. 标准文件工具驱动的代码分析
+- **结构感知分析**：基于文件内容理解进行代码结构分析，保证分析的完整性
+- **依赖关系分析**：通过搜索工具分析代码中的引用关系和依赖结构
+- **渐进式分析规划**：支持大型项目的分步分析和状态保持
 
 ### 3. 【强制】智能工作流执行规范
 
 #### 项目初始化流程：
-1. **Serena项目激活** → `mcp__serena__activate_project` 激活或切换到目标项目
-2. **项目文件索引** → `mcp__serena__list_dir` 建立项目文件结构索引
-3. **Serena入门检查** → `mcp__serena__check_onboarding_performed` 检查项目入门状态
-4. **符号结构分析** → `mcp__serena__get_symbols_overview` 理解项目架构和关键组件
-5. **记忆系统建立** → `mcp__serena__list_memories` 查询和创建项目特定知识库
-6. **技术栈识别** → 准备相应的查询策略
+1. **项目文件索引** → 使用 LS、Glob 建立项目文件结构索引
+2. **技术栈识别** → 准备相应的查询策略
+3. **关键文件分析** → 使用 Read 理解项目架构和关键组件
 
 #### 代码分析流程：
 1. **需求理解** → Sequential Thinking 复杂分析
 2. **技术方案** → DeepWiki 设计思想 + Context7 具体实现
-3. **代码定位** → Serena 符号查找和结构分析
-4. **精确分析** → Serena 符号级代码分析和评估
-5. **验证思考** → Serena 思考机制验证分析正确性
-6. **记忆更新** → 将新知识写入项目记忆系统
+3. **代码定位** → Grep 查找和结构分析
+4. **精确分析** → Read 文件级代码分析和评估
+5. **验证思考** → Sequential Thinking 验证分析正确性
 
 #### 重构分析流程：
-1. **影响分析** → Serena 符号引用关系分析
-2. **方案规划** → 基于项目记忆的渐进式重构分析计划
-3. **分步评估** → Serena 符号级精确分析和评估
+1. **影响分析** → Grep 搜索引用关系分析
+2. **方案规划** → 基于文件分析的渐进式重构计划
+3. **分步评估** → 文件级精确分析和评估
 4. **持续验证** → 每步后进行思考验证
-5. **知识更新** → 更新项目架构理解和最佳实践
-
-### 4. 【增强】性能优化与智能缓存
-
-#### 智能缓存策略：
-- **项目记忆复用**：避免重复分析相同的项目结构
-- **符号信息缓存**：Serena 符号分析结果在会话内复用
-- **查询结果关联**：DeepWiki/Context7 查询结果与项目代码建立持久关联
-
-#### 分析效率提升：
-- **批量符号分析**：使用 Serena 的批量分析能力减少操作次数
-- **智能预测**：基于项目记忆预测可能需要的技术查询
-- **并行处理**：在不冲突的情况下，并行执行多个 Serena 分析
 
 ## 【增强】智能反馈处理机制
 1. **非空反馈**：智能分析反馈内容，优化后续策略，继续调用 `mcp__mcp-feedback-enhanced__interactive_feedback`
@@ -462,63 +403,51 @@ FEEDBACK_TRIGGERS:
 - **自动化执行**：无论生成何种语言的代码，都**必须**按照上述流程自动执行
 - **错误处理**：如果git-config操作失败，应记录错误并使用默认作者信息
 
-## 【强制】智能融合工具调用链（全面版本）
+## 【强制】智能融合工具调用链（简化版本）
 
 ```
 任务分析与规划 →
-mcp__serena__activate_project 项目激活切换 →
-mcp__serena__list_dir 项目文件索引 →
-mcp__serena__check_onboarding_performed 项目入门检查 →
-mcp__serena__get_symbols_overview 项目结构理解 →
-mcp__serena__list_memories 项目记忆查询 →
-【重复任务检测】功能完成状态检查与相似度分析 →
+LS/Glob 项目文件索引 →
 (条件性) mcp__deepwiki__deepwiki_fetch 设计思想查询 / mcp__context7__* 技术实现查询 →
 mcp__git-config__is_git_repository Git仓库检测 →
 mcp__git-config__set_working_dir 工作目录设置 →
 mcp__git-config__get_git_username 作者信息获取 →
 mcp__mcp-datetime__get_datetime 时间戳生成 →
-mcp__serena__find_symbol 精确符号定位 →
-mcp__serena__find_referencing_symbols 符号引用分析 →
-mcp__serena__think_about_collected_information 信息收集思考 →
-mcp__serena__think_about_task_adherence 任务执行验证 →
-mcp__serena__write_memory 步骤记忆更新 →
-【功能完成记录】mcp__serena__write_memory 功能完成状态记录 →
-mcp__serena__think_about_whether_you_are_done 任务完成度评估 →
+Grep 精确代码定位 →
+Read 代码分析 →
+mcp__sequential-thinking__sequentialthinking 信息收集思考 →
 mcp__mcp-feedback-enhanced__interactive_feedback
 ```
 
 ### 智能分支决策规则：
-- **新项目**：完整执行项目激活和入门流程，建立完整的项目索引、记忆和理解
-- **已知项目**：快速激活项目，优先读取项目记忆，跳过重复分析步骤
-- **项目切换**：执行项目激活，重新建立上下文和工作环境
-- **功能增强模式**：基于现有功能记忆，执行增量式开发而非全新实现
+- **新项目**：完整执行项目文件索引，建立项目结构理解
+- **已知项目**：直接进入代码分析阶段
 - **复杂需求**：增加 Sequential Thinking 分析和多轮技术查询
-- **简单修改**：激活项目后直接进入符号定位和操作阶段
+- **简单修改**：直接进入代码定位和操作阶段
 
-## 【核心】Serena 渐进式任务分析与记忆保持机制
+## 【核心】渐进式任务分析与状态管理机制
 
-### A. 详细步骤分析与记忆化处理
+### A. 详细步骤分析与文档化处理
 - **步骤拆解原则**：复杂任务（重构分析/新功能分析）**必须**被分解为原子级可分析步骤
-- **每步记忆写入**：每完成一个分析步骤，**必须**调用 `mcp__serena__write_memory` 记录
-- **状态快照机制**：在关键节点创建项目分析状态快照，支持异常恢复
+- **每步文档记录**：每完成一个分析步骤，使用 Write 工具记录到文档文件
+- **状态快照机制**：在关键节点创建项目分析状态文档，支持异常恢复
 
 ### B. 异常恢复与状态一致性保证
-- **分析前状态检查**：每个步骤分析前，**必须**调用 `mcp__serena__read_memory` 确认
-- **异常中断恢复**：发生异常时，**必须**能够从记忆快照恢复
-- **上下文完整性验证**：通过 `mcp__serena__think_about_collected_information` 验证上下文完整性
+- **分析前状态检查**：每个步骤分析前，使用 Read 工具确认历史状态
+- **异常中断恢复**：发生异常时，能够从文档快照恢复
+- **上下文完整性验证**：通过 Sequential Thinking 验证上下文完整性
 
-### C. Serena 标准记忆管理
-**记忆操作标准流程**：
-- **写入记忆**：使用 `mcp__serena__write_memory` 记录项目状态和任务进度
-- **读取记忆**：使用 `mcp__serena__read_memory` 获取历史信息和上下文
-- **记忆查询**：使用 `mcp__serena__list_memories` 浏览所有项目记忆
-- **记忆删除**：使用 `mcp__serena__delete_memory` 清理过时或错误的记忆
+### C. 标准状态管理
+**状态操作标准流程**：
+- **写入状态**：使用 Write 工具记录项目状态和任务进度到文档
+- **读取状态**：使用 Read 工具获取历史信息和上下文
+- **状态查询**：使用 Glob 工具浏览所有项目相关文档
 
-**记忆内容规范**：
-- **任务记忆**：记录任务目标、进度、结果和关键决策
-- **项目记忆**：记录项目结构、技术栈、架构决策和最佳实践
-- **功能记忆**：记录功能实现状态、位置、依赖和版本信息
-- **经验记忆**：记录开发过程中的经验教训和优化建议
+**文档内容规范**：
+- **任务文档**：记录任务目标、进度、结果和关键决策
+- **项目文档**：记录项目结构、技术栈、架构决策和最佳实践
+- **功能文档**：记录功能实现状态、位置、依赖和版本信息
+- **经验文档**：记录开发过程中的经验教训和优化建议
 
 ## Core Development Principles
 
