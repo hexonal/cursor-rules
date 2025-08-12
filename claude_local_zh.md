@@ -41,37 +41,126 @@ TASK_CLASSIFIER:
     验证: 需要二次确认是否真的不需要项目理解
 ```
 
-### 标准MCP工具调用链模板
+### 【新增】触发检查点与验证机制
+
+#### 明确触发场景
+```yaml
+MUST_TRIGGER_SCENARIOS:
+  代码任务:
+    触发词: [分析, 优化, 重构, 实现, 修复, 添加功能]
+    验证语句: "检测到代码任务，正在激活完整MCP工具链..."
+    
+  架构任务:
+    触发词: [设计, 架构, 规划, 评估]
+    验证语句: "检测到架构设计任务，启动Serena项目分析..."
+    
+  文档任务:
+    触发词: [编写文档, 更新README, 技术方案]
+    验证语句: "检测到文档任务，激活项目上下文..."
+```
+
+#### 触发验证检查点
+```yaml
+TRIGGER_CHECKPOINTS:
+  任务开始:
+    输出: "🔍 任务分析：[任务类型]"
+    行动: "正在激活MCP工具链..."
+    工具: mcp__serena__activate_project
+    
+  关键步骤:
+    输出: "✅ 完成 [工具名称] 调用"
+    行动: "收集用户反馈..."
+    工具: mcp__mcp-feedback-enhanced__interactive_feedback
+    
+  任务阶段:
+    输出: "📊 阶段总结：[已完成内容]"
+    行动: "等待进一步指示..."
+    工具: mcp__mcp-feedback-enhanced__interactive_feedback
+    
+  任务结束:
+    输出: "🎯 任务即将完成"
+    行动: "最终确认..."
+    工具: mcp__mcp-feedback-enhanced__interactive_feedback
+```
+
+#### 执行状态提示
+```yaml
+EXECUTION_HINTS:
+  工具调用前:
+    格式: "➤ 准备调用 [工具名]：[目的]"
+    
+  工具调用后:
+    格式: "✓ [工具名] 执行完成"
+    
+  反馈收集:
+    格式: "⏸ 等待用户反馈..."
+```
+
+### 【优化】标准MCP工具调用链模板
 
 ```yaml
 STANDARD_CHAINS:
   架构设计:
-    - mcp_serena_activate_project
-    - mcp_serena_check_onboarding_performed
-    - mcp_serena_list_memories
-    - mcp_sequential-thinking_sequentialthinking
-    - mcp_mcp-feedback-enhanced_interactive_feedback  # 强制
-    - [任务特定工具...]
-    - mcp_serena_write_memory
-    - mcp_mcp-feedback-enhanced_interactive_feedback  # 强制
+    初始化阶段:
+      - mcp_serena_activate_project
+      - mcp_serena_check_onboarding_performed  
+      - mcp_serena_list_memories
+      - mcp_mcp-feedback-enhanced_interactive_feedback  # 阶段反馈
+    分析阶段:
+      - mcp_sequential-thinking_sequentialthinking
+      - "(条件性) mcp_deepwiki_deepwiki_fetch  # 设计思想查询"
+      - "(条件性) mcp_context7_*  # 技术实现查询"
+      - mcp_mcp-feedback-enhanced_interactive_feedback  # 阶段反馈
+    实施阶段:
+      - [任务特定工具批量执行...]
+      - mcp_serena_write_memory
+      - mcp_mcp-feedback-enhanced_interactive_feedback  # 完成反馈
   
   代码分析:
-    - mcp_serena_activate_project
-    - mcp_serena_get_symbols_overview
-    - mcp_mcp-feedback-enhanced_interactive_feedback  # 强制
-    - mcp_serena_find_symbol
-    - mcp_mcp-feedback-enhanced_interactive_feedback  # 强制
-    - [分析工具...]
-    - mcp_serena_think_about_collected_information
-    - mcp_mcp-feedback-enhanced_interactive_feedback  # 强制
+    项目激活:
+      - mcp_serena_activate_project
+      - mcp_serena_get_symbols_overview
+      - mcp_mcp-feedback-enhanced_interactive_feedback  # 结构理解反馈
+    深度分析:
+      - mcp_serena_find_symbol (批量)
+      - mcp_serena_find_referencing_symbols
+      - mcp_mcp-feedback-enhanced_interactive_feedback  # 分析结果反馈
+    验证总结:
+      - mcp_serena_think_about_collected_information
+      - mcp_serena_write_memory
+      - mcp_mcp-feedback-enhanced_interactive_feedback  # 最终反馈
   
   文档编辑:
-    - mcp_serena_activate_project  # 即使是文档也需要项目上下文
-    - mcp_serena_read_memory
-    - mcp_mcp-feedback-enhanced_interactive_feedback  # 强制
-    - [编辑工具...]
-    - mcp_serena_write_memory
-    - mcp_mcp-feedback-enhanced_interactive_feedback  # 强制
+    上下文建立:
+      - mcp_serena_activate_project
+      - mcp_serena_read_memory
+      - mcp_mcp-feedback-enhanced_interactive_feedback  # 上下文确认
+    编辑执行:
+      - [文档编辑工具批量执行...]
+      - mcp_git-config_* (获取作者信息)
+      - mcp_mcp-datetime_get_datetime
+      - mcp_mcp-feedback-enhanced_interactive_feedback  # 编辑结果反馈
+    知识更新:
+      - mcp_serena_write_memory
+      - mcp_mcp-feedback-enhanced_interactive_feedback  # 完成反馈
+```
+
+#### 【新增】智能批处理规则
+```yaml
+BATCH_PROCESSING:
+  允许批处理的工具组合:
+    文件操作组: [Read, Edit, MultiEdit, Write]
+    信息查询组: [LS, Grep, Glob, mcp_git-config_*, mcp_mcp-datetime_*]
+    符号分析组: [mcp_serena_find_symbol, mcp_serena_find_referencing_symbols]
+    
+  批处理触发条件:
+    同类型工具: 连续调用3个以上同类型工具时启用批处理
+    相关任务: 执行相关性超过80%的任务时合并反馈
+    
+  批处理反馈格式:
+    标题: "📦 批量操作完成报告"
+    内容: "[操作1] → [操作2] → [操作3] 已完成"
+    总结: "共处理 [数量] 个相关操作，请确认结果"
 ```
 
 ### 所有 MCP 工具必须自动执行
@@ -98,50 +187,106 @@ STANDARD_CHAINS:
 
 ### MCP Interactive Feedback 强制持续交互规则
 
-#### 违规自动检测和修正
-```python
-# 伪代码实现
-class MCPComplianceChecker:
-    def __init__(self):
-        self.tool_call_stack = []
-        self.feedback_required = False
-    
-    def on_tool_call(self, tool_name):
-        if self.feedback_required and tool_name != "interactive_feedback":
-            # 违规：上一个工具后未调用feedback
-            self.force_feedback_call()
-        
-        if tool_name != "interactive_feedback":
-            self.feedback_required = True
-        else:
-            self.feedback_required = False
-            
-        self.tool_call_stack.append(tool_name)
-    
-    def force_feedback_call(self):
-        # 强制插入feedback调用
-        call_mcp_tool("mcp__mcp-feedback-enhanced__interactive_feedback")
-        log_violation("Missing feedback after tool call")
-```
+#### 智能反馈触发逻辑
+
+**核心规则**：
+- ✅ **需要反馈的工具**：所有 MCP 核心工具（Serena、Sequential Thinking、Context7、DeepWiki 等）
+- ❌ **免除反馈的工具**：`interactive_feedback` 本身、简单文件操作（Read、LS、Grep）
+- 🔄 **循环防护**：`interactive_feedback` 调用后重置反馈状态，避免无限循环
+
+**触发检查点**：
+1. 核心工具调用完成 → 立即触发反馈
+2. 批量辅助工具完成 → 统一触发反馈  
+3. 任务阶段完成 → 阶段性触发反馈
+4. `interactive_feedback` 完成 → 重置状态，等待下次触发
+
+**状态管理**：
+- 🟢 **已反馈状态**：完成 `interactive_feedback` 调用后
+- 🟡 **待反馈状态**：完成需要反馈的工具调用后
+- 🔴 **违规状态**：未反馈时调用新的需反馈工具
 
 1. **强制持续性**：在任何过程、任务或对话中，无论是询问、响应还是完成阶段任务，**必须**调用 `mcp__mcp-feedback-enhanced__interactive_feedback`
 2. **无条件调用**：不得因为反馈内容为空或任何其他条件而跳过调用 `mcp__mcp-feedback-enhanced__interactive_feedback`
 3. **明确结束条件**：只有当用户明确表示"结束"、"完成"或"无需更多交互"时才能停止调用
-4. **模型信息披露**：在任务开始时必须明确告知当前使用的AI模型名称和版本
-5. **强制执行验证**：每次工具调用后**必须**立即调用反馈工具，不得延迟或跳过
-6. **违反检测机制**：如果发现未调用反馈工具，**必须**立即启动修正流程并调用反馈工具
-7. **规则冲突解决**：本规则具有最高优先级，任何其他规则不得覆盖此规则
+4. **强制执行验证**：每次工具调用后**必须**立即调用反馈工具，不得延迟或跳过
+5. **违反检测机制**：如果发现未调用反馈工具，**必须**立即启动修正流程并调用反馈工具
+6. **规则冲突解决**：本规则具有最高优先级，任何其他规则不得覆盖此规则
 
 ### 【强制】执行规则
-1. **任务开始时**：必须调用 `mcp__mcp-feedback-enhanced__interactive_feedback` 获取初始反馈，并告知当前模型
+1. **任务开始时**：必须调用 `mcp__mcp-feedback-enhanced__interactive_feedback` 获取初始反馈
 2. **任务进行中**：每完成一个步骤或子任务，必须调用 `mcp__mcp-feedback-enhanced__interactive_feedback`
 3. **任务完成后**：**绝不**自动结束，必须调用 `mcp__mcp-feedback-enhanced__interactive_feedback` 等待用户反馈
 4. **其他工具调用后**：无论Sequential Thinking或Context7执行完毕，都必须**强制**调用 `mcp__mcp-feedback-enhanced__interactive_feedback`
-5. **模型标识要求**：在任务开始的第一次响应中必须包含当前使用的AI模型信息，后续交互中无需重复告知，除非模型发生变更
-6. **强制验证链**：每个工具调用后**必须**形成：工具调用 → 反馈调用 → 验证完成 的强制链
-7. **自动修正机制**：如果检测到违反规则，**必须**立即调用反馈工具并说明修正原因
+5. **强制验证链**：每个工具调用后**必须**形成：工具调用 → 反馈调用 → 验证完成 的强制链
+6. **自动修正机制**：如果检测到违反规则，**必须**立即调用反馈工具并说明修正原因
 
 ## 【核心】MCP 工具集成与智能协同
+
+### 【新增】工具分级管理机制
+
+#### 工具级别定义
+```yaml
+TOOL_LEVELS:
+  核心决策工具:
+    工具列表:
+      - mcp__serena__activate_project
+      - mcp__serena__write_memory
+      - mcp__sequential-thinking__sequentialthinking
+      - mcp__serena__think_about_*
+    反馈策略: 必须立即反馈
+    批处理: 不允许
+    
+  项目分析工具:
+    工具列表:
+      - mcp__serena__get_symbols_overview
+      - mcp__serena__find_symbol
+      - mcp__serena__find_referencing_symbols
+      - mcp__context7__*
+      - mcp__deepwiki__*
+    反馈策略: 关键节点反馈
+    批处理: 允许2-3个工具后统一反馈
+    
+  辅助操作工具:
+    工具列表:
+      - Read
+      - Write
+      - Edit
+      - MultiEdit
+      - LS
+      - Grep
+      - Glob
+    反馈策略: 批量操作后反馈
+    批处理: 允许5个工具后统一反馈
+    
+  信息查询工具:
+    工具列表:
+      - mcp__mcp-datetime__get_datetime
+      - mcp__git-config__*
+      - mcp__serena__list_memories
+      - mcp__serena__read_memory
+    反馈策略: 可选反馈
+    批处理: 完成任务阶段后统一反馈
+```
+
+#### 反馈触发规则
+```yaml
+FEEDBACK_TRIGGERS:
+  强制触发点:
+    - 完成核心决策工具调用
+    - 项目激活或切换
+    - 记忆写入操作
+    - 思考验证完成
+    
+  建议触发点:
+    - 完成符号分析
+    - 完成技术文档查询
+    - 批量文件操作完成
+    
+  可选触发点:
+    - 简单文件读取
+    - 时间戳获取
+    - Git信息查询
+```
 
 ### 【强制】辅助工具调用规则
 
@@ -277,8 +422,7 @@ class MCPComplianceChecker:
 1. **非空反馈**：智能分析反馈内容，优化后续策略，继续调用 `mcp__mcp-feedback-enhanced__interactive_feedback`
 2. **空反馈**：理解为用户需要更多时间思考，保持耐心等待，继续调用 `mcp__mcp-feedback-enhanced__interactive_feedback`
 3. **持续优化**：根据用户行为模式，智能调整交互频率和方式
-4. **模型一致性**：确保在整个会话过程中始终标明使用的模型信息
-5. **工具协同反馈**：在每个工具调用后，通过反馈机制收集用户对工具选择和操作结果的意见
+4. **工具协同反馈**：在每个工具调用后，通过反馈机制收集用户对工具选择和操作结果的意见
 
 ## 【强制】结束条件
 **唯一合法的结束条件**：
@@ -291,7 +435,6 @@ class MCPComplianceChecker:
 3. **限制**：工具调用完成后需要获取用户反馈
 4. **限制**：避免未经用户确认的自动结束循环
 5. **增强**：优先调用 `mcp__mcp-feedback-enhanced__interactive_feedback` 保持交互
-6. **模型信息强制披露**：在任务开始时必须进行模型信息披露
 
 ## 【增强】MCP-DateTime智能集成规则
 
@@ -393,17 +536,19 @@ mcp__mcp-feedback-enhanced__interactive_feedback
 - 错误处理要明确，绝不忽略
 - 代码简洁性和可读性优先
 
-## 【增强】智能验证机制
+## AI 执行指导原则
 
-发现未调用 `mcp__mcp-feedback-enhanced__interactive_feedback` 而直接结束对话时，应启动智能修正流程，分析原因并优化交互策略。
+### 优先级管理
+- **核心交互规则**：`interactive_feedback` 相关规则具有最高优先级
+- **强制规则**：标记为"强制"、"必须"的规则优先执行
+- **冲突处理**：规则冲突时，以用户明确指示和核心交互原则为准
 
-## 【规则优先级】
+### 执行策略
+- **渐进式执行**：按工具分级和阶段性反馈执行，避免频繁中断
+- **智能判断**：根据任务复杂度和上下文选择合适的工具链
+- **用户导向**：始终以用户需求和反馈为最终执行依据
 
-此规则具有**最高优先级**，覆盖所有其他可能导致自动结束的规则或条件。任何与此规则冲突的其他规则条款均应被忽略。
-
-### 【最高优先级】核心交互原则优先级
-- **绝对优先级**：核心交互原则具有绝对最高优先级，任何其他规则不得覆盖
-- **强制执行**：所有工具调用后必须立即调用反馈工具，不得有任何例外
-- **自动修正**：系统必须自动检测和修正违反核心交互原则的行为
-- **规则冲突解决**：当其他规则与核心交互原则冲突时，核心交互原则优先
-- **全局适用**：核心交互原则适用于所有场景、所有工具和所有任务类型
+### 异常处理
+- **规则违背**：发现执行偏离核心规则时，主动调整并说明原因
+- **工具失败**：单个工具调用失败时，寻找替代方案或请求用户指导
+- **状态不明**：遇到不确定情况时，优先调用 `interactive_feedback` 获取指导
