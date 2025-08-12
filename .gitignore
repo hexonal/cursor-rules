@@ -49,7 +49,7 @@ cmake-build-*/
 
 # File-based project format
 *.iws
-
+!./.claude/settings.local.json
 # IntelliJ
 out/
 
