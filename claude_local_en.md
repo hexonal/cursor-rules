@@ -220,6 +220,16 @@ TOOL_LEVELS:
     feedback_strategy: Must immediately feedback
     batch_processing: Not allowed
     
+  Professional_Agent_Tools:
+    tool_list:
+      - Task (supports all subagent_type available in project)
+      - Dynamic project professional agents (any language/framework)
+      - general-purpose (universal fallback agent)
+    feedback_strategy: Must immediately feedback
+    batch_processing: Not allowed, each Agent call requires independent feedback
+    priority: Highest, Agent selection affects entire workflow
+    adaptation_principle: Dynamically adjust based on project's actual available agents
+    
   Project_Analysis_Tools:
     tool_list:
       - mcp__context7__*
@@ -256,9 +266,12 @@ TOOL_LEVELS:
 FEEDBACK_TRIGGERS:
   Mandatory_Trigger_Points:
     - Complete core decision tool calls
+    - Complete professional Agent selection and calls
+    - Agent collaboration task completion
     - Thinking verification completion
     
   Suggested_Trigger_Points:
+    - Complete Agent capability discovery and assessment
     - Complete code analysis
     - Complete technical documentation queries
     - Batch file operations completion
@@ -307,25 +320,144 @@ FEEDBACK_TRIGGERS:
 - **Use Cases**: When timestamps are needed for code generation, document creation
 - **Must Do After Call**: Immediately call `mcp__mcp-feedback-enhanced__interactive_feedback`
 
-#### 5. 🔧 Git Tool Set (based on git-config)
+#### 5. 🤖 Professional Agent Task Tool (Highest Importance)
+- **Function Name**: `Task`
+- **Core Parameters**: 
+  - subagent_type: Dynamically select from project's available agents (auto-discovered from .claude/agents/)
+  - description: Task description
+  - prompt: Detailed task instructions
+- **Smart Selection Strategy**: 
+  - Auto-discover available agents in current project
+  - Match agents based on task keywords and agent capabilities
+  - Fallback to general-purpose when no specialized agent available
+  - Support any project type and agent configuration
+- **Must Do After Call**: Immediately call `mcp__mcp-feedback-enhanced__interactive_feedback`
+- **Priority**: Highest, Agent selection directly affects task execution quality
+
+#### 6. 🔧 Git Tool Set (based on git-config)
 - **Function Names**: `mcp__git-config__is_git_repository`, `mcp__git-config__set_working_dir`, `mcp__git-config__get_git_username`, `mcp__git-config__get_working_dir`
 - **Use Cases**: When obtaining code author information
 - **Must Do After Call**: Immediately call `mcp__mcp-feedback-enhanced__interactive_feedback`
 
 ## 【Core】Tool Deep Integration & Intelligent Collaboration Mechanisms
 
+### 0. 【New】Intelligent Agent Selection & Project Adaptation Mechanism
+
+#### Project Agent Auto-Discovery & Matching
+
+```yaml
+AGENT_DISCOVERY:
+  Auto_Discovery_Paths:
+    - .claude/agents/  # Projects auto-load agents directory
+  
+  Agent_Capability_Auto_Parsing:
+    Dynamically_Extract_From_Available_Agents:
+      - name: Agent name
+      - specialty: Domain expertise (inferred from agent description)
+      - skills: Skill tags (extracted from agent type and description)
+      - tools: Supported tool set (obtained from agent definition)
+    
+  Discovery_Strategy:
+    - Runtime dynamic detection of available agents in current project
+    - Matching based on actual agent capabilities rather than preset configurations
+    - Support adaptive agent discovery for any project type
+```
+
+#### Intelligent Matching Algorithm
+
+```yaml
+AGENT_MATCHING:
+  Dynamic_Matching_Strategy:
+    Keyword_Based_Matching:
+      Development_Keywords: [develop, implement, code, build] → Find agents with development capabilities
+      Architecture_Keywords: [design, architect, plan, structure] → Find agents with architectural expertise  
+      Testing_Keywords: [test, verify, validate, qa] → Find agents with testing capabilities
+      Performance_Keywords: [optimize, performance, speed, memory] → Find agents with optimization expertise
+      Security_Keywords: [security, secure, vulnerability, audit] → Find agents with security expertise
+    
+    Capability_Based_Matching:
+      Programming_Language: Auto-detect from project files and match agent language capabilities
+      Framework_Tools: Auto-analyze project dependencies and match compatible agents
+      Domain_Expertise: Extract task intent and match agent specialty descriptions
+    
+    Priority_Calculation:
+      Capability_Match_Weight: 40%  # Agent capability match with task requirements
+      Description_Relevance_Weight: 30%  # Agent description relevance to task
+      Project_Context_Weight: 20%  # Agent fit with project context
+      Agent_Specificity_Weight: 10%  # Agent specialization level
+
+  Multi_Agent_Collaboration:
+    Lead_Mode: Select highest-scoring Agent as lead
+    Collaboration_Mode: Multiple Agents work by capability division
+    Consultation_Mode: Main Agent consults specialist Agents
+    Fallback_Mode: Use general-purpose agent when no specialized agent available
+```
+
+#### Agent Integration Mechanism
+
+```yaml
+AGENT_INTEGRATION:
+  Call_Timing:
+    Before_Project_Analysis: Select analysis Agent based on project type
+    During_Technical_Decision: Call architecture or technical expert Agent
+    During_Code_Implementation: Select language/framework development Agent
+    During_Quality_Assurance: Call testing, review, security specialist Agents
+  
+  Call_Methods:
+    Task_Tool_Integration: Via Task tool's subagent_type parameter
+    Auto_Selection: Auto select best-fit Agent based on matching algorithm
+    User_Specified: Users can explicitly specify which Agent to use
+    Smart_Switching: Dynamic Agent switching based on task progress
+  
+  State_Management:
+    Agent_Context: Maintain current active Agent's context
+    Collaboration_History: Record multi-Agent collaboration decision history
+    Knowledge_Transfer: Ensure knowledge continuity during Agent switching
+```
+
+#### Universal Agent Configuration Strategy
+
+```yaml
+Universal_Agent_Strategy:
+  # Dynamic agent discovery for any project type
+  Runtime_Detection:
+    Agent_Scanning: Scan .claude/agents/ for all available agents
+    Capability_Analysis: Auto-analyze each agent's capabilities from descriptions
+    Context_Matching: Match agents to current project context dynamically
+  
+  # Flexible matching patterns (not language-specific)
+  Adaptive_Matching_Patterns:
+    Development_Pattern:
+      Keywords: [develop, implement, code, build, create]
+      Agent_Selection: Choose agents with development-related descriptions
+    Architecture_Pattern:
+      Keywords: [design, architect, plan, structure, system]
+      Agent_Selection: Choose agents with architectural/design capabilities
+    Quality_Pattern:
+      Keywords: [test, review, verify, quality, security]
+      Agent_Selection: Choose agents with QA/review/security capabilities
+    
+  # Smart fallback strategy
+  Fallback_Strategy:
+    Specialized_First: Prioritize domain-specific agents when available
+    General_Fallback: Use general-purpose agent when no specialist found
+    Multi_Agent_Support: Enable multiple agent collaboration for complex tasks
+```
+
 ### 1. 【Mandatory】Intelligent Tool Chain Collaboration Rules
 
 #### Complete Code Analysis & Generation Workflow:
 ```
-Task Analysis → Project File Indexing → Technical Query → Git Information → Timestamp → 
-Precise Code Analysis → Thinking Verification → Interactive Feedback
+Task Analysis → Project Agent Discovery & Selection → Project File Indexing → Technical Query → Git Information → Timestamp → 
+Precise Code Analysis (Using Selected Agent) → Thinking Verification → Interactive Feedback
 ```
 
 #### Intelligent Decision Mechanisms:
+- **Project Agent Smart Selection**: Automatically select the most suitable Agent based on project type, task complexity and professional requirements
 - **Knowledge Enhancement Queries**: Based on code analysis results, intelligently choose DeepWiki (design philosophy) or Context7 (specific implementation)
-- **Precise Code Analysis**: Use standard file tools for code structure analysis and understanding
+- **Precise Code Analysis**: Use standard file tools combined with professional Agents for code structure analysis and understanding
 - **Continuous Thinking Verification**: Use Sequential Thinking for complex problem analysis
+- **Agent Collaboration Optimization**: Intelligent scheduling and knowledge transfer for multi-Agent collaboration
 
 ### 2. 【Enhanced】Multi-Tool Collaboration Optimization Strategies
 
@@ -342,16 +474,18 @@ Precise Code Analysis → Thinking Verification → Interactive Feedback
 ### 3. 【Mandatory】Intelligent Workflow Execution Standards
 
 #### Project Initialization Workflow:
-1. **Project File Indexing** → Use LS, Glob to establish project file structure index
-2. **Technology Stack Identification** → Prepare corresponding query strategies
-3. **Key File Analysis** → Use Read to understand project architecture and key components
+1. **Project Agent Discovery** → Scan available professional Agents in project, build Agent capability map
+2. **Project File Indexing** → Use LS, Glob to establish project file structure index
+3. **Technology Stack Identification** → Prepare corresponding query strategies, match optimal Agent
+4. **Key File Analysis** → Use Read with selected Agent to understand project architecture and key components
 
 #### Code Analysis Workflow:
-1. **Requirements Understanding** → Sequential Thinking complex analysis
-2. **Technical Solutions** → DeepWiki design philosophy + Context7 specific implementation
-3. **Code Location** → Grep search and structure analysis
-4. **Precise Analysis** → Read file-level code analysis and evaluation
-5. **Verification Thinking** → Sequential Thinking verify analysis correctness
+1. **Requirements Understanding** → Sequential Thinking complex analysis, determine required Agent capability types
+2. **Intelligent Agent Selection** → Smart matching of most suitable Agent based on task keywords and agent capability descriptions
+3. **Technical Solutions** → DeepWiki design philosophy + Context7 specific implementation
+4. **Code Location** → Grep search and structure analysis
+5. **Precise Analysis** → Read file-level code analysis and evaluation, with selected professional Agent deep analysis
+6. **Verification Thinking** → Sequential Thinking verify analysis correctness
 
 #### Refactoring Analysis Workflow:
 1. **Impact Analysis** → Grep search reference relationship analysis
@@ -403,11 +537,13 @@ Precise Code Analysis → Thinking Verification → Interactive Feedback
 - **Automated Execution**: Regardless of generated code language, **MUST** automatically execute above workflow
 - **Error Handling**: If git-config operations fail, log errors and use default author information
 
-## 【Mandatory】Intelligent Integrated Tool Call Chain (Simplified Version)
+## 【Mandatory】Intelligent Integrated Tool Call Chain (Agent-Enhanced Version)
 
 ```
 Task Analysis & Planning →
-LS/Glob Project File Indexing →
+LS/Glob Project File Indexing → 
+Agent Discovery & Capability Assessment →
+Smart Agent Selection & Matching →
 (Conditional) mcp__deepwiki__deepwiki_fetch Design Philosophy Query / mcp__context7__* Technical Implementation Query →
 mcp__git-config__is_git_repository Git Repository Detection →
 mcp__git-config__set_working_dir Working Directory Setup →
@@ -415,15 +551,18 @@ mcp__git-config__get_git_username Author Information Retrieval →
 mcp__mcp-datetime__get_datetime Timestamp Generation →
 Grep Precise Code Location →
 Read Code Analysis →
+Task Call Selected Professional Agent for Deep Analysis →
 mcp__sequential-thinking__sequentialthinking Information Collection Thinking →
 mcp__mcp-feedback-enhanced__interactive_feedback
 ```
 
 ### Intelligent Branch Decision Rules:
-- **New Projects**: Complete project file indexing, establish project structure understanding
-- **Known Projects**: Enter code analysis phase directly
-- **Complex Requirements**: Add Sequential Thinking analysis and multi-round technical queries
-- **Simple Modifications**: Enter code location and operation phase directly
+- **New Projects**: Complete Agent discovery, project file indexing, establish project structure understanding and Agent capability map
+- **Known Projects**: Quick Agent matching, enter code analysis phase directly
+- **Complex Requirements**: Add Sequential Thinking analysis, call multiple professional Agents for collaboration
+- **Simple Modifications**: Use general or lightweight Agents, enter code location and operation phase directly
+- **Cross-Domain Tasks**: Enable multi-Agent collaboration mode, work division by professional domains
+- **Performance-Sensitive Tasks**: Intelligently select Agents with performance optimization capabilities (based on agent description auto-matching)
 
 ## 【Core】Progressive Task Analysis & State Management Mechanisms
 

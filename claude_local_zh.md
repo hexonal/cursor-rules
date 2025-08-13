@@ -220,6 +220,16 @@ TOOL_LEVELS:
     反馈策略: 必须立即反馈
     批处理: 不允许
     
+  专业Agent工具:
+    工具列表:
+      - Task (支持所有项目中可用的 subagent_type)
+      - 动态检测的项目专业 agents (任何语言/框架)
+      - general-purpose (通用兜底 agent)
+    反馈策略: 必须立即反馈
+    批处理: 不允许，每个Agent调用独立反馈
+    优先级: 最高，Agent选择影响整个工作流
+    适配原则: 基于项目实际可用 agents 动态调整
+    
   项目分析工具:
     工具列表:
       - mcp__context7__*
@@ -256,9 +266,12 @@ TOOL_LEVELS:
 FEEDBACK_TRIGGERS:
   强制触发点:
     - 完成核心决策工具调用
+    - 完成专业Agent选择和调用
+    - Agent协作任务完成
     - 思考验证完成
     
   建议触发点:
+    - 完成Agent能力发现和评估
     - 完成代码分析
     - 完成技术文档查询
     - 批量文件操作完成
@@ -307,25 +320,137 @@ FEEDBACK_TRIGGERS:
 - **使用场景**: 代码生成、文档创建需要时间戳时使用
 - **调用后必须**: 立即调用 `mcp__mcp-feedback-enhanced__interactive_feedback`
 
-#### 5. 🔧 Git 工具集（基于git-config）
+#### 5. 🤖 专业Agent任务工具（最高重要性）
+- **函数名**: `Task`
+- **核心参数**: 
+  - subagent_type: 从项目可用的 agents 中动态选择（从 .claude/agents/ 自动发现）
+  - description: 任务描述
+  - prompt: 详细任务指令
+- **智能选择策略**: 基于项目类型、任务复杂度、技术栈自动选择最适合的Agent
+- **调用后必须**: 立即调用 `mcp__mcp-feedback-enhanced__interactive_feedback`
+- **优先级**: 最高，Agent选择直接影响任务执行质量
+
+#### 6. 🔧 Git 工具集（基于git-config）
 - **函数名**: `mcp__git-config__is_git_repository`、`mcp__git-config__set_working_dir`、`mcp__git-config__get_git_username`、`mcp__git-config__get_working_dir`
 - **使用场景**: 获取代码作者信息时使用
 - **调用后必须**: 立即调用 `mcp__mcp-feedback-enhanced__interactive_feedback`
 
 ## 【核心】工具深度融合与智能协同机制
 
+### 0. 【新增】智能 Agent 选择与项目适配机制
+
+#### 项目 Agent 自动发现与匹配
+
+```yaml
+AGENT_DISCOVERY:
+  自动发现路径:
+    - .claude/agents/  # 项目已自动加载的 agents 目录
+  
+  Agent 能力自动解析:
+    从可用 agents 中动态获取:
+      - name: Agent名称
+      - specialty: 专长领域（从 agent 描述推断）
+      - skills: 技能标签（从 agent 类型和描述提取）
+      - tools: 支持的工具集（从 agent 定义获取）
+    
+  发现策略:
+    - 运行时动态检测当前项目可用的 agents
+    - 基于 agents 实际能力而非预设配置进行匹配
+    - 支持任何类型项目的 agent 自适应发现
+```
+
+#### AI模型智能匹配算法
+
+```yaml
+INTELLIGENT_AGENT_MATCHING:
+  模型驱动选择策略:
+    自然语言理解:
+      - AI模型分析任务描述和上下文
+      - 识别任务类型和复杂度
+      - 提取需要的专业能力和技能
+    
+    智能能力匹配:
+      - 动态分析可用 agents 的能力描述
+      - 评估 agent 与任务需求的语义相关性
+      - 考虑项目上下文和技术特征
+      - 选择最佳匹配或组合策略
+    
+    动态适应机制:
+      - 基于任务成果和反馈调整选择
+      - 支持实时切换和协作模式
+      - 避免依赖预定义的规则或权重
+      - 保持对不同项目类型的通用性
+
+  智能协作模式:
+    单一专家模式: 高相关性单个 Agent 主导处理
+    多专家协作: 多个 Agent 按能力互补协作
+    主辅咨询模式: 主要 Agent 咨询相关专家
+    通用兜底模式: 无专业 Agent 时使用 general-purpose
+```
+
+#### Agent 调用集成机制
+
+```yaml
+AGENT_INTEGRATION:
+  智能调用时机:
+    项目初始化: 基于项目结构和技术栈动态选择分析 Agent
+    任务执行: 根据具体任务需求和复杂度选择专业 Agent
+    质量把控: 自动调用相关领域的专家 Agent 进行质量保证
+    问题解决: 基于问题类型匹配最适合的专业 Agent
+  
+  灵活调用方式:
+    Task工具集成: 通过 Task 工具的 subagent_type 参数调用任何可用 Agent
+    智能自动选择: 基于实时匹配算法自动选择最适合的可用 Agent
+    用户明确指定: 支持用户指定任何项目中可用的 Agent
+    动态适应切换: 根据任务进展和需求变化智能切换 Agent
+    备选方案: 首选 Agent 不可用时自动选择次优 Agent
+  
+  通用状态管理:
+    多Agent上下文: 维护多个活跃 Agent 的状态信息
+    协作决策记录: 记录不同 Agent 间的协作和决策过程
+    知识无缝传递: 确保 Agent 切换时项目知识的连续性
+    能力互补利用: 充分发挥不同 Agent 的专业优势
+```
+
+#### 项目 Agent 配置示例
+
+```yaml
+通用Agent智能选择示例:
+  # 动态检测机制示例
+  语言项目自适应:
+    Go项目: 自动匹配名称包含 "go-" 前缀或描述包含 "golang", "go" 的 agents
+    Python项目: 自动匹配名称包含 "python-", "py-" 或描述包含 "python" 的 agents
+    JavaScript项目: 自动匹配名称包含 "js-", "node-" 或描述包含 "javascript", "nodejs" 的 agents
+    Java项目: 自动匹配名称包含 "java-" 或描述包含 "java", "spring" 的 agents
+    
+  # 任务驱动选择示例
+  任务自适应匹配:
+    开发任务: 优先选择包含 "developer", "coding" 关键词的 agents
+    架构设计: 优先选择包含 "architect", "design" 关键词的 agents
+    代码审查: 优先选择包含 "reviewer", "quality" 关键词的 agents
+    性能优化: 优先选择包含 "performance", "optimization" 关键词的 agents
+    
+  # 智能兜底机制
+  备选策略:
+    无专业匹配: 自动使用 general-purpose 或通用性最强的 agent
+    多个匹配: 基于评分算法选择最优，或启动协作模式
+    Agent不可用: 自动降级到次优选择或通用 agent
+```
+
 ### 1. 【强制】智能工具链式协同规则
 
 #### 代码分析与生成的完整流程：
 ```
-任务分析 → 项目文件索引 → 技术查询 → Git信息 → 时间戳 → 
-精确代码分析 → 思考验证 → Interactive Feedback
+任务分析 → 项目 Agent 发现与选择 → 项目文件索引 → 技术查询 → Git信息 → 时间戳 → 
+精确代码分析（使用选定Agent） → 思考验证 → Interactive Feedback
 ```
 
 #### 智能决策机制：
+- **项目 Agent 智能选择**：基于项目类型、任务复杂度和专业需求自动选择最适合的 Agent
 - **知识增强查询**：基于代码分析结果，智能选择 DeepWiki（设计思想）或 Context7（具体实现）
-- **精确代码分析**：使用标准文件工具进行代码结构分析和理解
+- **精确代码分析**：使用标准文件工具配合专业 Agent 进行代码结构分析和理解
 - **持续思考验证**：使用 Sequential Thinking 进行复杂问题分析
+- **Agent 协作优化**：多 Agent 协同工作时的智能调度和知识传递
 
 ### 2. 【增强】多工具协同优化策略
 
@@ -342,16 +467,18 @@ FEEDBACK_TRIGGERS:
 ### 3. 【强制】智能工作流执行规范
 
 #### 项目初始化流程：
-1. **项目文件索引** → 使用 LS、Glob 建立项目文件结构索引
-2. **技术栈识别** → 准备相应的查询策略
-3. **关键文件分析** → 使用 Read 理解项目架构和关键组件
+1. **项目 Agent 发现** → 扫描项目中可用的专业 Agent，建立 Agent 能力图谱
+2. **项目文件索引** → 使用 LS、Glob 建立项目文件结构索引
+3. **技术栈识别** → 准备相应的查询策略，匹配最佳 Agent
+4. **关键文件分析** → 使用 Read 配合选定的 Agent 理解项目架构和关键组件
 
 #### 代码分析流程：
-1. **需求理解** → Sequential Thinking 复杂分析
-2. **技术方案** → DeepWiki 设计思想 + Context7 具体实现
-3. **代码定位** → Grep 查找和结构分析
-4. **精确分析** → Read 文件级代码分析和评估
-5. **验证思考** → Sequential Thinking 验证分析正确性
+1. **需求理解** → Sequential Thinking 复杂分析，确定所需 Agent 能力类型
+2. **智能 Agent 选择** → 基于任务关键词和 agent 能力描述智能匹配最适合的 Agent
+3. **技术方案** → DeepWiki 设计思想 + Context7 具体实现
+4. **代码定位** → Grep 查找和结构分析
+5. **精确分析** → Read 文件级代码分析和评估，配合选定的专业 Agent 深度分析
+6. **验证思考** → Sequential Thinking 验证分析正确性
 
 #### 重构分析流程：
 1. **影响分析** → Grep 搜索引用关系分析
@@ -403,11 +530,13 @@ FEEDBACK_TRIGGERS:
 - **自动化执行**：无论生成何种语言的代码，都**必须**按照上述流程自动执行
 - **错误处理**：如果git-config操作失败，应记录错误并使用默认作者信息
 
-## 【强制】智能融合工具调用链（简化版本）
+## 【强制】智能融合工具调用链（Agent增强版本）
 
 ```
 任务分析与规划 →
-LS/Glob 项目文件索引 →
+LS/Glob 项目文件索引 → 
+Agent 发现与能力评估 →
+智能 Agent 选择与匹配 →
 (条件性) mcp__deepwiki__deepwiki_fetch 设计思想查询 / mcp__context7__* 技术实现查询 →
 mcp__git-config__is_git_repository Git仓库检测 →
 mcp__git-config__set_working_dir 工作目录设置 →
@@ -415,15 +544,18 @@ mcp__git-config__get_git_username 作者信息获取 →
 mcp__mcp-datetime__get_datetime 时间戳生成 →
 Grep 精确代码定位 →
 Read 代码分析 →
+Task 调用选定专业Agent进行深度分析 →
 mcp__sequential-thinking__sequentialthinking 信息收集思考 →
 mcp__mcp-feedback-enhanced__interactive_feedback
 ```
 
 ### 智能分支决策规则：
-- **新项目**：完整执行项目文件索引，建立项目结构理解
-- **已知项目**：直接进入代码分析阶段
-- **复杂需求**：增加 Sequential Thinking 分析和多轮技术查询
-- **简单修改**：直接进入代码定位和操作阶段
+- **新项目**：完整执行 Agent 发现、项目文件索引，建立项目结构理解和 Agent 能力图谱
+- **已知项目**：快速 Agent 匹配，直接进入代码分析阶段
+- **复杂需求**：增加 Sequential Thinking 分析，调用多个专业 Agent 协作
+- **简单修改**：使用通用或轻量级 Agent，直接进入代码定位和操作阶段
+- **跨领域任务**：启用多 Agent 协作模式，按专业领域分工处理
+- **性能敏感任务**：智能选择具有性能优化能力的专业 Agent（基于 agent 描述自动匹配）
 
 ## 【核心】渐进式任务分析与状态管理机制
 
