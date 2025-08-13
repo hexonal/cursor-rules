@@ -53,7 +53,9 @@
       "mcp__playwright__browser_tab_new",
       "mcp__playwright__browser_tab_select",
       "mcp__playwright__browser_tab_close",
-      "mcp__playwright__browser_wait_for"
+      "mcp__playwright__browser_wait_for",
+      "Bash(git rm:*)",
+      "Bash(rm:*)"
     ]
   },
   "mcpServers": {
