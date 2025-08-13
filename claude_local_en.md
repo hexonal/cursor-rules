@@ -418,30 +418,20 @@ AGENT_INTEGRATION:
 #### Universal Agent Configuration Strategy
 
 ```yaml
-Universal_Agent_Strategy:
-  # Dynamic agent discovery for any project type
-  Runtime_Detection:
-    Agent_Scanning: Scan .claude/agents/ for all available agents
-    Capability_Analysis: Auto-analyze each agent's capabilities from descriptions
-    Context_Matching: Match agents to current project context dynamically
-  
-  # Flexible matching patterns (not language-specific)
-  Adaptive_Matching_Patterns:
-    Development_Pattern:
-      Keywords: [develop, implement, code, build, create]
-      Agent_Selection: Choose agents with development-related descriptions
-    Architecture_Pattern:
-      Keywords: [design, architect, plan, structure, system]
-      Agent_Selection: Choose agents with architectural/design capabilities
-    Quality_Pattern:
-      Keywords: [test, review, verify, quality, security]
-      Agent_Selection: Choose agents with QA/review/security capabilities
+AI_Model_Intelligent_Selection_Strategy:
+  # Core implementation principle: Let AI autonomously analyze and decide
+  AI_Model_Driven_Selection:
+    - Automatically analyze project context and task requirements
+    - Evaluate available agents' capability descriptions and relevance
+    - No need for predefined matching rules or keyword lists
+    - Support any language, framework, and professional domain
     
-  # Smart fallback strategy
-  Fallback_Strategy:
-    Specialized_First: Prioritize domain-specific agents when available
-    General_Fallback: Use general-purpose agent when no specialist found
-    Multi_Agent_Support: Enable multiple agent collaboration for complex tasks
+  # Simplified global strategy
+  Universal_Implementation_Mechanism:
+    Priority: specialized agent > related agent > general-purpose agent
+    Selection_Method: AI model performs intelligent matching based on semantic understanding
+    Collaboration_Mode: Support flexible collaboration of single or multiple agents
+    Fault_Tolerance: Ensure tasks always get appropriate handling
 ```
 
 ### 1. 【Mandatory】Intelligent Tool Chain Collaboration Rules

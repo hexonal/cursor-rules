@@ -412,29 +412,23 @@ AGENT_INTEGRATION:
     能力互补利用: 充分发挥不同 Agent 的专业优势
 ```
 
-#### 项目 Agent 配置示例
+#### AI模型智能选择实施策略
 
 ```yaml
-通用Agent智能选择示例:
-  # 动态检测机制示例
-  语言项目自适应:
-    Go项目: 自动匹配名称包含 "go-" 前缀或描述包含 "golang", "go" 的 agents
-    Python项目: 自动匹配名称包含 "python-", "py-" 或描述包含 "python" 的 agents
-    JavaScript项目: 自动匹配名称包含 "js-", "node-" 或描述包含 "javascript", "nodejs" 的 agents
-    Java项目: 自动匹配名称包含 "java-" 或描述包含 "java", "spring" 的 agents
+智能选择实施策略:
+  # 核心实施原则：让AI自主分析和决策
+  AI模型主导选择:
+    - 自动分析项目上下文和任务需求
+    - 评估可用 agents 的能力描述和相关性
+    - 无需预设具体匹配规则或关键词列表
+    - 支持任意语言、框架和专业领域
     
-  # 任务驱动选择示例
-  任务自适应匹配:
-    开发任务: 优先选择包含 "developer", "coding" 关键词的 agents
-    架构设计: 优先选择包含 "architect", "design" 关键词的 agents
-    代码审查: 优先选择包含 "reviewer", "quality" 关键词的 agents
-    性能优化: 优先选择包含 "performance", "optimization" 关键词的 agents
-    
-  # 智能兜底机制
-  备选策略:
-    无专业匹配: 自动使用 general-purpose 或通用性最强的 agent
-    多个匹配: 基于评分算法选择最优，或启动协作模式
-    Agent不可用: 自动降级到次优选择或通用 agent
+  # 简化的全局策略
+  通用实施机制:
+    优先级: 专业 agent > 相关 agent > general-purpose agent
+    选择方式: AI模型基于语义理解进行智能匹配
+    协作模式: 支持单个或多个 agent 的灵活协作
+    容错机制: 确保任务总能得到合适的处理
 ```
 
 ### 1. 【强制】智能工具链式协同规则
